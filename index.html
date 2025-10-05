@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disney+ Watchlist Condivisa</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .login-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .login-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-box h1 {
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2.5em;
+        }
+
+        .user-buttons {
+            display: flex;
+            gap: 20px;
+        }
+
+        .user-btn {
+            padding: 20px 40px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: bold;
+        }
+
+        .user-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .vincenzo-btn {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+        }
+
+        .milena-btn {
+            background: linear-gradient(135deg, #ec4899, #be185d);
+            color: white;
+        }
+
+        .app-screen {
+            display: none;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h2 {
+            font-size: 1.8em;
+        }
+
+        .logout-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 15px 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .tab-btn.active {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .content {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2em;
+        }
+
+        .movies-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .movie-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            transition: transform 0.2s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .movie-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .movie-poster {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .movie-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.95em;
+        }
+
+        .movie-year {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85em;
+            margin-bottom: 10px;
+        }
+
+        .add-btn {
+            width: 100%;
+            padding: 8px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.3s;
+        }
+
+        .add-btn:hover {
+            opacity: 0.8;
+        }
+
+        .add-btn.added {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+        }
+
+        .partner-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #ec4899;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            font-weight: bold;
+        }
+
+        .vincenzo-color .partner-badge {
+            background: #3b82f6;
+        }
+
+        .shared-list {
+            margin-top: 20px;
+        }
+
+        .shared-list h3 {
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: white;
+            font-size: 1em;
+        }
+
+        .search-box::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h1>🎬 Disney+ Watchlist</h1>
+            <div class="user-buttons">
+                <button class="user-btn vincenzo-btn" onclick="login('vincenzo')">Vincenzo 🇮🇹</button>
+                <button class="user-btn milena-btn" onclick="login('milena')">Milena 🇧🇷</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Screen -->
+    <div id="appScreen" class="app-screen">
+        <div class="container">
+            <div class="header">
+                <h2 id="welcomeText">Benvenuto!</h2>
+                <button class="logout-btn" onclick="logout()">Esci</button>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('catalog')">Catalogo Disney+</button>
+                <button class="tab-btn" onclick="switchTab('mylist')">La Mia Lista</button>
+                <button class="tab-btn" onclick="switchTab('shared')">Da Vedere Insieme ❤️</button>
+            </div>
+
+            <div class="content">
+                <!-- Catalog Tab -->
+                <div id="catalogTab" class="tab-content">
+                    <input type="text" id="searchBox" class="search-box" placeholder="Cerca film...">
+                    <div id="catalogContent" class="loading">Caricamento catalogo...</div>
+                </div>
+
+                <!-- My List Tab -->
+                <div id="mylistTab" class="tab-content" style="display: none;">
+                    <div id="mylistContent" class="movies-grid"></div>
+                </div>
+
+                <!-- Shared List Tab -->
+                <div id="sharedTab" class="tab-content" style="display: none;">
+                    <div class="shared-list">
+                        <h3 id="sharedTitle">Film che volete vedere insieme 💕</h3>
+                        <div id="sharedContent" class="movies-grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Google Sheets API URL
+        const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwSl1vLF1Kvhaj4TlFyyIcLkk7la73nNteGTr-F6vtw8PWCJdpEAnZWjIwKoFv3Np1ntQ/exec';
+
+        // State
+        let currentUser = null;
+        let allMovies = [];
+        let userLists = {
+            vincenzo: [],
+            milena: []
+        };
+
+        // Translations
+        const translations = {
+            vincenzo: {
+                welcome: 'Ciao Vincenzo! 🇮🇹',
+                logout: 'Esci',
+                tabCatalog: 'Catalogo Disney+',
+                tabMyList: 'La Mia Lista',
+                tabShared: 'Da Vedere Insieme ❤️',
+                searchPlaceholder: 'Cerca film...',
+                loading: 'Caricamento catalogo...',
+                noMovies: 'Nessun film trovato',
+                addButton: '+ Aggiungi',
+                addedButton: '✓ Nella mia lista',
+                removeButton: '✓ Rimuovi',
+                partnerBadge: '❤️ Milena',
+                sharedBadge: '💕 Insieme',
+                sharedTitle: 'Film che volete vedere insieme 💕',
+                emptyMyList: 'La tua lista è vuota. Aggiungi film dal catalogo!',
+                emptyShared: 'Nessun film in comune ancora. Aggiungete i vostri film preferiti! 💑',
+                errorLoad: 'Errore nel caricamento dei dati da Google Sheets',
+                errorSave: 'Errore nel salvataggio su Google Sheets',
+                errorRemove: 'Errore nella rimozione da Google Sheets'
+            },
+            milena: {
+                welcome: 'Olá Milena! 🇧🇷',
+                logout: 'Sair',
+                tabCatalog: 'Catálogo Disney+',
+                tabMyList: 'Minha Lista',
+                tabShared: 'Para Assistir Juntos ❤️',
+                searchPlaceholder: 'Buscar filmes...',
+                loading: 'Carregando catálogo...',
+                noMovies: 'Nenhum filme encontrado',
+                addButton: '+ Adicionar',
+                addedButton: '✓ Na minha lista',
+                removeButton: '✓ Remover',
+                partnerBadge: '❤️ Vincenzo',
+                sharedBadge: '💕 Juntos',
+                sharedTitle: 'Filmes que vocês querem assistir juntos 💕',
+                emptyMyList: 'Sua lista está vazia. Adicione filmes do catálogo!',
+                emptyShared: 'Nenhum filme em comum ainda. Adicionem seus filmes favoritos! 💑',
+                errorLoad: 'Erro ao carregar dados do Google Sheets',
+                errorSave: 'Erro ao salvar no Google Sheets',
+                errorRemove: 'Erro ao remover do Google Sheets'
+            }
+        };
+
+        function t(key) {
+            return translations[currentUser][key];
+        }
+
+        // Mock Disney+ data (poiché JustWatch richiede autenticazione, uso dati di esempio)
+        const mockMovies = {
+            italy: [
+                { id: 1, title: "Encanto", year: 2021, poster: "https://image.tmdb.org/t/p/w500/4j0PNHkMr5ax3IA8tjtxcmPU3QT.jpg" },
+                { id: 2, title: "Frozen", year: 2013, poster: "https://image.tmdb.org/t/p/w500/kgwjIb2JDHRhNk13lmSxiClFjVk.jpg" },
+                { id: 3, title: "Moana", year: 2016, poster: "https://image.tmdb.org/t/p/w500/4JeejGugONWpJkbnvL12hVoYEDa.jpg" },
+                { id: 4, title: "Coco", year: 2017, poster: "https://image.tmdb.org/t/p/w500/gGEsBPAijhVUFoiNpgZXqRVWJt2.jpg" },
+                { id: 5, title: "Luca", year: 2021, poster: "https://image.tmdb.org/t/p/w500/620hnMVLu6RSZW6a5rwO8gqpt0t.jpg" },
+                { id: 6, title: "Soul", year: 2020, poster: "https://image.tmdb.org/t/p/w500/hm58Jw4Lw8OIeECIq5qyPYhAeRJ.jpg" },
+                { id: 7, title: "Turning Red", year: 2022, poster: "https://image.tmdb.org/t/p/w500/qsdjk9oAKSQMWs0Vt5Pyfh6O4GZ.jpg" },
+                { id: 8, title: "Raya e l'Ultimo Drago", year: 2021, poster: "https://image.tmdb.org/t/p/w500/lPsD10PP4rgUGiGR4CCXA6iY0QQ.jpg" }
+            ],
+            brazil: [
+                { id: 1, title: "Encanto", year: 2021, poster: "https://image.tmdb.org/t/p/w500/4j0PNHkMr5ax3IA8tjtxcmPU3QT.jpg" },
+                { id: 9, title: "Viva - A Vida é uma Festa", year: 2017, poster: "https://image.tmdb.org/t/p/w500/gGEsBPAijhVUFoiNpgZXqRVWJt2.jpg" },
+                { id: 10, title: "Elementos", year: 2023, poster: "https://image.tmdb.org/t/p/w500/6oH378KUfCEitzJkm07r97L0RsZ.jpg" },
+                { id: 11, title: "Wish: O Poder dos Desejos", year: 2023, poster: "https://image.tmdb.org/t/p/w500/zKdyzgRtMeKmPQqyhsyqVnbVr0I.jpg" },
+                { id: 5, title: "Luca", year: 2021, poster: "https://image.tmdb.org/t/p/w500/620hnMVLu6RSZW6a5rwO8gqpt0t.jpg" },
+                { id: 12, title: "Atlantis: O Reino Perdido", year: 2001, poster: "https://image.tmdb.org/t/p/w500/lJuMeEuTVWdKkKuDt3ULEZSh4vd.jpg" },
+                { id: 13, title: "Irmão Urso", year: 2003, poster: "https://image.tmdb.org/t/p/w500/kDAq8xYfe9c3d9n2x2VbhLzx4Dm.jpg" }
+            ]
+        };
+
+        // Google Sheets API functions
+        async function loadFromSheets() {
+            try {
+                const response = await fetch(`${SHEETS_API_URL}?action=getAll`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Reset lists
+                    userLists = { vincenzo: [], milena: [] };
+                    
+                    // Populate lists from sheet data
+                    data.movies.forEach(movie => {
+                        if (movie.user === 'vincenzo' || movie.user === 'milena') {
+                            userLists[movie.user].push({
+                                id: movie.movieId,
+                                title: movie.title,
+                                year: movie.year,
+                                poster: movie.poster
+                            });
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading from sheets:', error);
+                showError(t('errorLoad'));
+            }
+        }
+
+        async function addToSheets(user, movie) {
+            try {
+                const response = await fetch(SHEETS_API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'add',
+                        user: user,
+                        movieId: movie.id,
+                        title: movie.title,
+                        year: movie.year,
+                        poster: movie.poster
+                    })
+                });
+                
+                return true;
+            } catch (error) {
+                console.error('Error adding to sheets:', error);
+                showError(t('errorSave'));
+                return false;
+            }
+        }
+
+        async function removeFromSheets(user, movieId) {
+            try {
+                const response = await fetch(SHEETS_API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'remove',
+                        user: user,
+                        movieId: movieId
+                    })
+                });
+                
+                return true;
+            } catch (error) {
+                console.error('Error removing from sheets:', error);
+                showError(t('errorRemove'));
+                return false;
+            }
+        }
+
+        function showError(message) {
+            const catalogContent = document.getElementById('catalogContent');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            catalogContent.insertBefore(errorDiv, catalogContent.firstChild);
+            
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        // Login
+        async function login(user) {
+            currentUser = user;
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('appScreen').style.display = 'block';
+            
+            document.getElementById('welcomeText').textContent = t('welcome');
+            
+            if (user === 'vincenzo') {
+                document.body.classList.add('vincenzo-color');
+            }
+            
+            // Update UI with translations
+            updateUILanguage();
+            
+            // Load data from Google Sheets
+            await loadFromSheets();
+            
+            loadCatalog();
+        }
+
+        // Update UI language
+        function updateUILanguage() {
+            document.querySelector('.logout-btn').textContent = t('logout');
+            document.querySelectorAll('.tab-btn')[0].textContent = t('tabCatalog');
+            document.querySelectorAll('.tab-btn')[1].textContent = t('tabMyList');
+            document.querySelectorAll('.tab-btn')[2].textContent = t('tabShared');
+            document.getElementById('searchBox').placeholder = t('searchPlaceholder');
+            document.getElementById('sharedTitle').textContent = t('sharedTitle');
+        }
+
+        // Logout
+        function logout() {
+            currentUser = null;
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('appScreen').style.display = 'none';
+            document.body.classList.remove('vincenzo-color');
+        }
+
+        // Load catalog based on user region
+        function loadCatalog() {
+            const region = currentUser === 'vincenzo' ? 'italy' : 'brazil';
+            allMovies = mockMovies[region];
+            
+            document.getElementById('catalogContent').innerHTML = `<div class="loading">${t('loading')}</div>`;
+            
+            setTimeout(() => {
+                displayCatalog(allMovies);
+            }, 500);
+        }
+
+        // Display catalog
+        function displayCatalog(movies) {
+            const catalogContent = document.getElementById('catalogContent');
+            
+            if (movies.length === 0) {
+                catalogContent.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+                return;
+            }
+
+            const otherUser = currentUser === 'vincenzo' ? 'milena' : 'vincenzo';
+
+            catalogContent.innerHTML = '<div class="movies-grid">' + movies.map(movie => {
+                const isInMyList = userLists[currentUser].some(m => m.id === movie.id);
+                const isInPartnerList = userLists[otherUser].some(m => m.id === movie.id);
+                
+                return `
+                    <div class="movie-card">
+                        ${isInPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
+                        <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
+                        <div class="movie-title">${movie.title}</div>
+                        <div class="movie-year">${movie.year}</div>
+                        <button class="add-btn ${isInMyList ? 'added' : ''}" onclick="toggleMovie(${movie.id})">
+                            ${isInMyList ? t('addedButton') : t('addButton')}
+                        </button>
+                    </div>
+                `;
+            }).join('') + '</div>';
+        }
+
+        // Toggle movie in list
+        async function toggleMovie(movieId) {
+            const movie = allMovies.find(m => m.id === movieId);
+            if (!movie) return;
+
+            const index = userLists[currentUser].findIndex(m => m.id === movieId);
+            
+            if (index === -1) {
+                // Add to list
+                userLists[currentUser].push(movie);
+                await addToSheets(currentUser, movie);
+            } else {
+                // Remove from list
+                userLists[currentUser].splice(index, 1);
+                await removeFromSheets(currentUser, movieId);
+            }
+
+            displayCatalog(allMovies);
+            updateMyList();
+            updateSharedList();
+        }
+
+        // Update my list
+        function updateMyList() {
+            const mylistContent = document.getElementById('mylistContent');
+            const myMovies = userLists[currentUser];
+
+            if (myMovies.length === 0) {
+                mylistContent.innerHTML = `<div class="empty-state">${t('emptyMyList')}</div>`;
+                return;
+            }
+
+            mylistContent.innerHTML = myMovies.map(movie => `
+                <div class="movie-card">
+                    <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
+                    <div class="movie-title">${movie.title}</div>
+                    <div class="movie-year">${movie.year}</div>
+                    <button class="add-btn added" onclick="toggleMovie(${movie.id})">${t('removeButton')}</button>
+                </div>
+            `).join('');
+        }
+
+        // Update shared list
+        function updateSharedList() {
+            const sharedContent = document.getElementById('sharedContent');
+            const sharedMovies = userLists.vincenzo.filter(movie => 
+                userLists.milena.some(m => m.id === movie.id)
+            );
+
+            if (sharedMovies.length === 0) {
+                sharedContent.innerHTML = `<div class="empty-state">${t('emptyShared')}</div>`;
+                return;
+            }
+
+            sharedContent.innerHTML = sharedMovies.map(movie => `
+                <div class="movie-card">
+                    <div class="partner-badge">${t('sharedBadge')}</div>
+                    <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
+                    <div class="movie-title">${movie.title}</div>
+                    <div class="movie-year">${movie.year}</div>
+                </div>
+            `).join('');
+        }
+
+        // Switch tabs
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+            
+            event.target.classList.add('active');
+            
+            if (tab === 'catalog') {
+                document.getElementById('catalogTab').style.display = 'block';
+            } else if (tab === 'mylist') {
+                document.getElementById('mylistTab').style.display = 'block';
+                updateMyList();
+            } else if (tab === 'shared') {
+                document.getElementById('sharedTab').style.display = 'block';
+                updateSharedList();
+            }
+        }
+
+        // Search functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchBox = document.getElementById('searchBox');
+            searchBox.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const filtered = allMovies.filter(movie => 
+                    movie.title.toLowerCase().includes(query)
+                );
+                displayCatalog(filtered);
+            });
+        });
+    </script>
+</body>
+</html>
