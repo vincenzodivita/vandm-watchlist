@@ -71,7 +71,7 @@
             color: white;
         }
 
-        .milena-btn {
+        .millena-btn {
             background: linear-gradient(135deg, #ec4899, #be185d);
             color: white;
         }
@@ -166,17 +166,24 @@
             object-fit: cover;
             border-radius: 8px;
             margin-bottom: 10px;
-            background: rgba(255, 255, 255, 0.1);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
         }
 
         .movie-title {
             font-weight: bold;
             margin-bottom: 5px;
             font-size: 0.95em;
+            min-height: 40px;
         }
 
         .movie-year {
             color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .movie-rating {
+            color: #fbbf24;
             font-size: 0.85em;
             margin-bottom: 10px;
         }
@@ -246,6 +253,42 @@
             color: rgba(255, 255, 255, 0.5);
         }
 
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 30px;
+            padding: 20px;
+        }
+
+        .pagination button {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .pagination button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-info {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
         .error-message {
             background: rgba(239, 68, 68, 0.2);
             border: 1px solid #ef4444;
@@ -262,7 +305,7 @@
             <h1>🎬 Disney+ Watchlist</h1>
             <div class="user-buttons">
                 <button class="user-btn vincenzo-btn" onclick="login('vincenzo')">Vincenzo 🇮🇹</button>
-                <button class="user-btn milena-btn" onclick="login('milena')">Milena 🇧🇷</button>
+                <button class="user-btn millena-btn" onclick="login('millena')">Millena 🇧🇷</button>
             </div>
         </div>
     </div>
@@ -307,14 +350,25 @@
     <script>
         // Google Sheets API URL
         const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwSl1vLF1Kvhaj4TlFyyIcLkk7la73nNteGTr-F6vtw8PWCJdpEAnZWjIwKoFv3Np1ntQ/exec';
+        
+        // TMDB API Configuration
+        const TMDB_API_KEY = 'e52e82734d4a34d3494787371a7149ba';
+        const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+        const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
         // State
         let currentUser = null;
         let allMovies = [];
         let userLists = {
             vincenzo: [],
-            milena: []
+            millena: []
         };
+        let isLoadingMovies = false;
+        let currentPage = 1;
+        let totalPages = 1;
+        let currentRegion = null;
+        let isSearching = false;
+        let currentSearchQuery = '';
 
         // Translations
         const translations = {
@@ -324,13 +378,13 @@
                 tabCatalog: 'Catalogo Disney+',
                 tabMyList: 'La Mia Lista',
                 tabShared: 'Da Vedere Insieme ❤️',
-                searchPlaceholder: 'Cerca film...',
+                searchPlaceholder: 'Cerca film su TMDB...',
                 loading: 'Caricamento catalogo...',
                 noMovies: 'Nessun film trovato',
                 addButton: '+ Aggiungi',
                 addedButton: '✓ Nella mia lista',
                 removeButton: '✓ Rimuovi',
-                partnerBadge: '❤️ Milena',
+                partnerBadge: '❤️ Millena',
                 sharedBadge: '💕 Insieme',
                 sharedTitle: 'Film che volete vedere insieme 💕',
                 emptyMyList: 'La tua lista è vuota. Aggiungi film dal catalogo!',
@@ -339,13 +393,13 @@
                 errorSave: 'Errore nel salvataggio su Google Sheets',
                 errorRemove: 'Errore nella rimozione da Google Sheets'
             },
-            milena: {
-                welcome: 'Olá Milena! 🇧🇷',
+            millena: {
+                welcome: 'Olá Millena! 🇧🇷',
                 logout: 'Sair',
                 tabCatalog: 'Catálogo Disney+',
                 tabMyList: 'Minha Lista',
                 tabShared: 'Para Assistir Juntos ❤️',
-                searchPlaceholder: 'Buscar filmes...',
+                searchPlaceholder: 'Buscar filmes no TMDB...',
                 loading: 'Carregando catálogo...',
                 noMovies: 'Nenhum filme encontrado',
                 addButton: '+ Adicionar',
@@ -389,6 +443,124 @@
             ]
         };
 
+        // TMDB API Functions
+        async function fetchDisneyMovies(region, page = 1) {
+            if (isLoadingMovies) return { movies: [], totalPages: 1 };
+            isLoadingMovies = true;
+
+            try {
+                // Disney+ provider ID: 337
+                const watchRegion = region === 'italy' ? 'IT' : 'BR';
+                
+                console.log('Fetching Disney+ movies for region:', watchRegion, 'page:', page);
+                
+                // Fetch movies available on Disney+ in the specific region
+                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=337&watch_region=${watchRegion}&sort_by=popularity.desc&page=${page}`;
+                console.log('TMDB URL:', url);
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                console.log('TMDB Response:', data);
+                
+                if (!data.results || data.results.length === 0) {
+                    console.warn('No Disney+ movies found for region:', watchRegion, 'Fetching popular Disney movies instead');
+                    const result = await fetchPopularDisneyMovies(page);
+                    isLoadingMovies = false;
+                    return result;
+                }
+                
+                const movies = data.results.map(movie => ({
+                    id: movie.id,
+                    title: movie.title,
+                    year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
+                    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
+                    overview: movie.overview,
+                    rating: movie.vote_average
+                }));
+                
+                console.log('Processed movies:', movies);
+                isLoadingMovies = false;
+                return {
+                    movies: movies,
+                    totalPages: Math.min(data.total_pages, 20) // Limit to 20 pages
+                };
+                
+            } catch (error) {
+                console.error('Error fetching from TMDB:', error);
+                isLoadingMovies = false;
+                showError('Errore nel caricamento da TMDB: ' + error.message);
+                return { movies: [], totalPages: 1 };
+            }
+        }
+
+        async function fetchPopularDisneyMovies(page = 1) {
+            try {
+                console.log('Fetching popular Disney/Pixar movies... page:', page);
+                
+                // Search for Disney (ID: 2) and Pixar (ID: 3) movies
+                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_companies=2|3&sort_by=popularity.desc&page=${page}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                console.log('Popular Disney movies response:', data);
+                
+                const movies = data.results.map(movie => ({
+                    id: movie.id,
+                    title: movie.title,
+                    year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
+                    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
+                    overview: movie.overview,
+                    rating: movie.vote_average
+                }));
+                
+                console.log('Processed popular movies:', movies);
+                return {
+                    movies: movies,
+                    totalPages: Math.min(data.total_pages, 20)
+                };
+                
+            } catch (error) {
+                console.error('Error fetching popular Disney movies:', error);
+                return { movies: [], totalPages: 1 };
+            }
+        }
+
+        // Search movies via TMDB API
+        async function searchMovies(query, page = 1) {
+            if (!query || query.trim() === '') {
+                return { movies: [], totalPages: 0 };
+            }
+
+            try {
+                console.log('Searching for:', query, 'page:', page);
+                
+                const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=${page}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                console.log('Search results:', data);
+                
+                const movies = data.results.map(movie => ({
+                    id: movie.id,
+                    title: movie.title,
+                    year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
+                    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
+                    overview: movie.overview,
+                    rating: movie.vote_average
+                }));
+                
+                return {
+                    movies: movies,
+                    totalPages: Math.min(data.total_pages, 20)
+                };
+                
+            } catch (error) {
+                console.error('Error searching movies:', error);
+                return { movies: [], totalPages: 0 };
+            }
+        }
+
         // Google Sheets API functions
         async function loadFromSheets() {
             try {
@@ -397,11 +569,11 @@
                 
                 if (data.success) {
                     // Reset lists
-                    userLists = { vincenzo: [], milena: [] };
+                    userLists = { vincenzo: [], millena: [] };
                     
                     // Populate lists from sheet data
                     data.movies.forEach(movie => {
-                        if (movie.user === 'vincenzo' || movie.user === 'milena') {
+                        if (movie.user === 'vincenzo' || movie.user === 'millena') {
                             userLists[movie.user].push({
                                 id: movie.movieId,
                                 title: movie.title,
@@ -516,15 +688,87 @@
         }
 
         // Load catalog based on user region
-        function loadCatalog() {
+        async function loadCatalog(page = 1) {
             const region = currentUser === 'vincenzo' ? 'italy' : 'brazil';
-            allMovies = mockMovies[region];
+            currentRegion = region;
+            currentPage = page;
+            isSearching = false;
+            currentSearchQuery = '';
+            
+            // Clear search box
+            const searchBox = document.getElementById('searchBox');
+            if (searchBox) searchBox.value = '';
             
             document.getElementById('catalogContent').innerHTML = `<div class="loading">${t('loading')}</div>`;
             
-            setTimeout(() => {
+            // Fetch movies from TMDB
+            const result = await fetchDisneyMovies(region, page);
+            allMovies = result.movies;
+            totalPages = result.totalPages;
+            
+            displayCatalog(allMovies);
+            updatePagination();
+        }
+
+        // Load search results
+        async function loadSearchResults(query, page = 1) {
+            isSearching = true;
+            currentSearchQuery = query;
+            currentPage = page;
+            
+            document.getElementById('catalogContent').innerHTML = `<div class="loading">${t('loading')}</div>`;
+            
+            const result = await searchMovies(query, page);
+            allMovies = result.movies;
+            totalPages = result.totalPages;
+            
+            if (allMovies.length === 0) {
+                document.getElementById('catalogContent').innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+            } else {
                 displayCatalog(allMovies);
-            }, 500);
+                updatePagination();
+            }
+        }
+
+        // Update pagination controls
+        function updatePagination() {
+            const catalogContent = document.getElementById('catalogContent');
+            
+            if (totalPages <= 1) {
+                // No pagination needed
+                return;
+            }
+            
+            const paginationHTML = `
+                <div class="pagination">
+                    <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>
+                        ◀ ${currentUser === 'vincenzo' ? 'Precedente' : 'Anterior'}
+                    </button>
+                    <span class="page-info">
+                        ${currentUser === 'vincenzo' ? 'Pagina' : 'Página'} ${currentPage} ${currentUser === 'vincenzo' ? 'di' : 'de'} ${totalPages}
+                    </span>
+                    <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>
+                        ${currentUser === 'vincenzo' ? 'Successiva' : 'Próxima'} ▶
+                    </button>
+                </div>
+            `;
+            catalogContent.innerHTML += paginationHTML;
+        }
+
+        // Change page
+        async function changePage(newPage) {
+            if (newPage < 1 || newPage > totalPages) return;
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            if (isSearching && currentSearchQuery) {
+                // Load next page of search results
+                await loadSearchResults(currentSearchQuery, newPage);
+            } else {
+                // Load next page of catalog
+                await loadCatalog(newPage);
+            }
         }
 
         // Display catalog
@@ -536,7 +780,7 @@
                 return;
             }
 
-            const otherUser = currentUser === 'vincenzo' ? 'milena' : 'vincenzo';
+            const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
 
             catalogContent.innerHTML = '<div class="movies-grid">' + movies.map(movie => {
                 const isInMyList = userLists[currentUser].some(m => m.id === movie.id);
@@ -548,6 +792,7 @@
                         <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
                         <div class="movie-title">${movie.title}</div>
                         <div class="movie-year">${movie.year}</div>
+                        ${movie.rating ? `<div class="movie-rating">⭐ ${movie.rating.toFixed(1)}</div>` : ''}
                         <button class="add-btn ${isInMyList ? 'added' : ''}" onclick="toggleMovie(${movie.id})">
                             ${isInMyList ? t('addedButton') : t('addButton')}
                         </button>
@@ -602,7 +847,7 @@
         function updateSharedList() {
             const sharedContent = document.getElementById('sharedContent');
             const sharedMovies = userLists.vincenzo.filter(movie => 
-                userLists.milena.some(m => m.id === movie.id)
+                userLists.millena.some(m => m.id === movie.id)
             );
 
             if (sharedMovies.length === 0) {
@@ -639,15 +884,31 @@
         }
 
         // Search functionality
+        let searchTimeout = null;
+        
+        function handleSearch() {
+            const searchBox = document.getElementById('searchBox');
+            const query = searchBox.value.trim();
+            
+            clearTimeout(searchTimeout);
+            
+            if (query === '') {
+                // If search is cleared, reload catalog
+                loadCatalog(1);
+                return;
+            }
+            
+            // Debounce search - wait 500ms after user stops typing
+            searchTimeout = setTimeout(() => {
+                loadSearchResults(query, 1);
+            }, 500);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const searchBox = document.getElementById('searchBox');
-            searchBox.addEventListener('input', (e) => {
-                const query = e.target.value.toLowerCase();
-                const filtered = allMovies.filter(movie => 
-                    movie.title.toLowerCase().includes(query)
-                );
-                displayCatalog(filtered);
-            });
+            if (searchBox) {
+                searchBox.addEventListener('input', handleSearch);
+            }
         });
     </script>
 </body>
