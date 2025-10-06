@@ -71,7 +71,7 @@
             color: white;
         }
 
-        .millena-btn {
+        .milena-btn {
             background: linear-gradient(135deg, #ec4899, #be185d);
             color: white;
         }
@@ -305,7 +305,7 @@
             <h1>🎬 Disney+ Watchlist</h1>
             <div class="user-buttons">
                 <button class="user-btn vincenzo-btn" onclick="login('vincenzo')">Vincenzo 🇮🇹</button>
-                <button class="user-btn millena-btn" onclick="login('millena')">Millena 🇧🇷</button>
+                <button class="user-btn milena-btn" onclick="login('milena')">Milena 🇧🇷</button>
             </div>
         </div>
     </div>
@@ -361,7 +361,7 @@
         let allMovies = [];
         let userLists = {
             vincenzo: [],
-            millena: []
+            milena: []
         };
         let isLoadingMovies = false;
         let currentPage = 1;
@@ -378,13 +378,13 @@
                 tabCatalog: 'Catalogo Disney+',
                 tabMyList: 'La Mia Lista',
                 tabShared: 'Da Vedere Insieme ❤️',
-                searchPlaceholder: 'Cerca film su TMDB...',
+                searchPlaceholder: 'Cerca su Disney+ Italia...',
                 loading: 'Caricamento catalogo...',
                 noMovies: 'Nessun film trovato',
                 addButton: '+ Aggiungi',
                 addedButton: '✓ Nella mia lista',
                 removeButton: '✓ Rimuovi',
-                partnerBadge: '❤️ Millena',
+                partnerBadge: '❤️ Milena',
                 sharedBadge: '💕 Insieme',
                 sharedTitle: 'Film che volete vedere insieme 💕',
                 emptyMyList: 'La tua lista è vuota. Aggiungi film dal catalogo!',
@@ -393,13 +393,13 @@
                 errorSave: 'Errore nel salvataggio su Google Sheets',
                 errorRemove: 'Errore nella rimozione da Google Sheets'
             },
-            millena: {
-                welcome: 'Olá Millena! 🇧🇷',
+            milena: {
+                welcome: 'Olá Milena! 🇧🇷',
                 logout: 'Sair',
                 tabCatalog: 'Catálogo Disney+',
                 tabMyList: 'Minha Lista',
                 tabShared: 'Para Assistir Juntos ❤️',
-                searchPlaceholder: 'Buscar filmes no TMDB...',
+                searchPlaceholder: 'Buscar no Disney+ Brasil...',
                 loading: 'Carregando catálogo...',
                 noMovies: 'Nenhum filme encontrado',
                 addButton: '+ Adicionar',
@@ -449,13 +449,13 @@
             isLoadingMovies = true;
 
             try {
-                // Disney+ provider ID: 337
                 const watchRegion = region === 'italy' ? 'IT' : 'BR';
+                const language = region === 'italy' ? 'it-IT' : 'pt-BR';
                 
-                console.log('Fetching Disney+ movies for region:', watchRegion, 'page:', page);
+                console.log('Fetching Disney+ movies for region:', watchRegion, 'language:', language, 'page:', page);
                 
-                // Fetch movies available on Disney+ in the specific region
-                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=337&watch_region=${watchRegion}&sort_by=popularity.desc&page=${page}`;
+                // Fetch movies available on Disney+ in the specific region with language
+                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=337&watch_region=${watchRegion}&language=${language}&sort_by=popularity.desc&page=${page}`;
                 console.log('TMDB URL:', url);
                 
                 const response = await fetch(url);
@@ -465,7 +465,7 @@
                 
                 if (!data.results || data.results.length === 0) {
                     console.warn('No Disney+ movies found for region:', watchRegion, 'Fetching popular Disney movies instead');
-                    const result = await fetchPopularDisneyMovies(page);
+                    const result = await fetchPopularDisneyMovies(page, language);
                     isLoadingMovies = false;
                     return result;
                 }
@@ -483,7 +483,7 @@
                 isLoadingMovies = false;
                 return {
                     movies: movies,
-                    totalPages: Math.min(data.total_pages, 20) // Limit to 20 pages
+                    totalPages: data.total_pages || 1
                 };
                 
             } catch (error) {
@@ -494,12 +494,12 @@
             }
         }
 
-        async function fetchPopularDisneyMovies(page = 1) {
+        async function fetchPopularDisneyMovies(page = 1, language = 'en-US') {
             try {
-                console.log('Fetching popular Disney/Pixar movies... page:', page);
+                console.log('Fetching popular Disney/Pixar movies... page:', page, 'language:', language);
                 
                 // Search for Disney (ID: 2) and Pixar (ID: 3) movies
-                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_companies=2|3&sort_by=popularity.desc&page=${page}`;
+                const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_companies=2|3&language=${language}&sort_by=popularity.desc&page=${page}`;
                 const response = await fetch(url);
                 const data = await response.json();
                 
@@ -517,7 +517,7 @@
                 console.log('Processed popular movies:', movies);
                 return {
                     movies: movies,
-                    totalPages: Math.min(data.total_pages, 20)
+                    totalPages: data.total_pages || 1
                 };
                 
             } catch (error) {
@@ -526,33 +526,75 @@
             }
         }
 
-        // Search movies via TMDB API
+        // Search movies via TMDB API (searches ALL Disney+ catalog)
         async function searchMovies(query, page = 1) {
             if (!query || query.trim() === '') {
                 return { movies: [], totalPages: 0 };
             }
 
             try {
-                console.log('Searching for:', query, 'page:', page);
+                const watchRegion = currentRegion === 'italy' ? 'IT' : 'BR';
+                const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
                 
-                const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&page=${page}`;
-                const response = await fetch(url);
+                console.log('Searching Disney+ catalog for:', query, 'region:', watchRegion, 'language:', language);
+                
+                // Use discover endpoint with search-like behavior
+                // We'll search through Disney+ content with the query
+                const searchUrl = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=${language}&page=${page}`;
+                console.log('Search URL:', searchUrl);
+                
+                const response = await fetch(searchUrl);
                 const data = await response.json();
                 
-                console.log('Search results:', data);
+                console.log('Search response:', data);
                 
-                const movies = data.results.map(movie => ({
-                    id: movie.id,
-                    title: movie.title,
-                    year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
-                    poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
-                    overview: movie.overview,
-                    rating: movie.vote_average
-                }));
+                if (!data.results || data.results.length === 0) {
+                    return { movies: [], totalPages: 0 };
+                }
+                
+                // Now filter to check which movies are on Disney+ for this region
+                const filteredMovies = [];
+                
+                for (const movie of data.results.slice(0, 20)) {
+                    try {
+                        // Check if movie is available on Disney+ in the region
+                        const providersUrl = `${TMDB_BASE_URL}/movie/${movie.id}/watch/providers?api_key=${TMDB_API_KEY}`;
+                        const providersResponse = await fetch(providersUrl);
+                        const providersData = await providersResponse.json();
+                        
+                        // Check if Disney+ (provider 337) is available in the user's region
+                        const regionData = providersData.results?.[watchRegion];
+                        const hasDisneyPlus = regionData?.flatrate?.some(provider => provider.provider_id === 337);
+                        
+                        if (hasDisneyPlus) {
+                            // Get movie details with correct language
+                            const detailUrl = `${TMDB_BASE_URL}/movie/${movie.id}?api_key=${TMDB_API_KEY}&language=${language}`;
+                            const detailResponse = await fetch(detailUrl);
+                            const details = await detailResponse.json();
+                            
+                            filteredMovies.push({
+                                id: details.id,
+                                title: details.title,
+                                year: details.release_date ? new Date(details.release_date).getFullYear() : 'N/A',
+                                poster: details.poster_path ? `${TMDB_IMAGE_BASE}${details.poster_path}` : '',
+                                overview: details.overview,
+                                rating: details.vote_average
+                            });
+                        }
+                        
+                        // Small delay to avoid rate limiting
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
+                    } catch (error) {
+                        console.error('Error checking movie providers:', error);
+                    }
+                }
+                
+                console.log('Filtered Disney+ movies:', filteredMovies);
                 
                 return {
-                    movies: movies,
-                    totalPages: Math.min(data.total_pages, 20)
+                    movies: filteredMovies,
+                    totalPages: filteredMovies.length > 0 ? Math.ceil(data.total_results / 20) : 0
                 };
                 
             } catch (error) {
@@ -569,11 +611,11 @@
                 
                 if (data.success) {
                     // Reset lists
-                    userLists = { vincenzo: [], millena: [] };
+                    userLists = { vincenzo: [], milena: [] };
                     
                     // Populate lists from sheet data
                     data.movies.forEach(movie => {
-                        if (movie.user === 'vincenzo' || movie.user === 'millena') {
+                        if (movie.user === 'vincenzo' || movie.user === 'milena') {
                             userLists[movie.user].push({
                                 id: movie.movieId,
                                 title: movie.title,
@@ -666,7 +708,12 @@
             // Load data from Google Sheets
             await loadFromSheets();
             
-            loadCatalog();
+            // Set current region
+            const region = user === 'vincenzo' ? 'italy' : 'brazil';
+            currentRegion = region;
+            
+            // Load first page
+            loadCatalog(1);
         }
 
         // Update UI language
@@ -682,9 +729,18 @@
         // Logout
         function logout() {
             currentUser = null;
+            currentRegion = null;
+            allMovies = [];
+            currentPage = 1;
+            totalPages = 1;
+            isSearching = false;
+            currentSearchQuery = '';
+            
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('appScreen').style.display = 'none';
             document.body.classList.remove('vincenzo-color');
+            
+            console.log('Logged out - state cleared');
         }
 
         // Load catalog based on user region
@@ -780,7 +836,7 @@
                 return;
             }
 
-            const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
+            const otherUser = currentUser === 'vincenzo' ? 'milena' : 'vincenzo';
 
             catalogContent.innerHTML = '<div class="movies-grid">' + movies.map(movie => {
                 const isInMyList = userLists[currentUser].some(m => m.id === movie.id);
@@ -847,7 +903,7 @@
         function updateSharedList() {
             const sharedContent = document.getElementById('sharedContent');
             const sharedMovies = userLists.vincenzo.filter(movie => 
-                userLists.millena.some(m => m.id === movie.id)
+                userLists.milena.some(m => m.id === movie.id)
             );
 
             if (sharedMovies.length === 0) {
