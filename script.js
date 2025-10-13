@@ -9,8 +9,8 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 // Global State
 let currentUser = null;
 let allMovies = [];
-let userLists = { vincenzo: [], milena: [] };
-let seenMovies = { vincenzo: [], milena: [] };
+let userLists = { vincenzo: [], millena: [] };
+let seenMovies = { vincenzo: [], millena: [] };
 let isLoadingMovies = false;
 let currentPage = 1;
 let totalPages = 1;
@@ -36,7 +36,7 @@ const translations = {
         removeButton: '✓ Rimuovi',
         seenButton: '✓ Già visto',
         notSeenButton: '↺ Da vedere',
-        partnerBadge: '❤️ Milena',
+        partnerBadge: '❤️ Millena',
         sharedBadge: '💕 Insieme',
         seenBadge: '✓ Visto',
         sharedTitle: 'Film che volete vedere insieme 💕',
@@ -53,8 +53,8 @@ const translations = {
         page: 'Pagina',
         of: 'di'
     },
-    milena: {
-        welcome: 'Olá Milena! 🇧🇷',
+    millena: {
+        welcome: 'Olá Millena! 🇧🇷',
         logout: 'Sair',
         tabCatalog: 'Catálogo Disney+',
         tabMyList: 'Minha Lista',
@@ -224,11 +224,11 @@ async function loadFromSheets() {
         const data = await response.json();
         
         if (data.success) {
-            userLists = { vincenzo: [], milena: [] };
-            seenMovies = { vincenzo: [], milena: [] };
+            userLists = { vincenzo: [], millena: [] };
+            seenMovies = { vincenzo: [], millena: [] };
             
             data.movies.forEach(movie => {
-                if (movie.user === 'vincenzo' || movie.user === 'milena') {
+                if (movie.user === 'vincenzo' || movie.user === 'millena') {
                     const movieData = {
                         id: movie.movieId,
                         title: movie.title,
@@ -447,7 +447,7 @@ function displayCatalog(movies) {
         return;
     }
 
-    const otherUser = currentUser === 'vincenzo' ? 'milena' : 'vincenzo';
+    const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
 
     catalogContent.innerHTML = '<div class="movies-grid">' + movies.map(movie => {
         const isInMyList = userLists[currentUser].some(m => m.id === movie.id);
@@ -510,10 +510,10 @@ function updateMyList() {
 function updateSharedList() {
     const sharedContent = document.getElementById('sharedContent');
     const sharedMovies = userLists.vincenzo.filter(movie => 
-        userLists.milena.some(m => m.id === movie.id)
+        userLists.millena.some(m => m.id === movie.id)
     ).filter(movie => 
         !(seenMovies.vincenzo.some(m => m.id === movie.id) && 
-          seenMovies.milena.some(m => m.id === movie.id))
+          seenMovies.millena.some(m => m.id === movie.id))
     );
 
     if (sharedMovies.length === 0) {
@@ -535,7 +535,7 @@ function updateSharedList() {
 function updateSeenList() {
     const seenContent = document.getElementById('seenContent');
     const sharedSeenMovies = seenMovies.vincenzo.filter(movie => 
-        seenMovies.milena.some(m => m.id === movie.id)
+        seenMovies.millena.some(m => m.id === movie.id)
     );
 
     if (sharedSeenMovies.length === 0) {
@@ -556,7 +556,7 @@ function updateSeenList() {
 
 async function toggleSeen(movieId, markAsSeen) {
     const movie = userLists.vincenzo.find(m => m.id === movieId) || 
-                  userLists.milena.find(m => m.id === movieId);
+                  userLists.millena.find(m => m.id === movieId);
     
     if (!movie) return;
     
@@ -564,12 +564,12 @@ async function toggleSeen(movieId, markAsSeen) {
         if (!seenMovies.vincenzo.some(m => m.id === movieId)) {
             seenMovies.vincenzo.push(movie);
         }
-        if (!seenMovies.milena.some(m => m.id === movieId)) {
-            seenMovies.milena.push(movie);
+        if (!seenMovies.millena.some(m => m.id === movieId)) {
+            seenMovies.millena.push(movie);
         }
     } else {
         seenMovies.vincenzo = seenMovies.vincenzo.filter(m => m.id !== movieId);
-        seenMovies.milena = seenMovies.milena.filter(m => m.id !== movieId);
+        seenMovies.millena = seenMovies.millena.filter(m => m.id !== movieId);
     }
     
     await markAsSeenInSheets(movieId, markAsSeen);
