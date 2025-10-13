@@ -1,4 +1,4 @@
-  * {
+* {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -500,4 +500,26 @@ body {
     .movies-grid {
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     }
+}
+.header-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.videocall-btn {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+.videocall-btn:hover {
+    transform: scale(1.05);
 }
