@@ -24,6 +24,12 @@
 <div class="header">
             <h2 id="welcomeText">Benvenuto!</h2>
             <div class="header-buttons">
+                <button id="syncWatchBtn" class="sync-btn" onclick="openSyncWatch()" title="Guarda insieme in sincronizzazione">
+                    🔗 Watch Together
+                </button>
+                <button class="edit-btn" onclick="openEditSyncModal()" title="Modifica link di sincronizzazione">
+                    ✏️
+                </button>
                 <a href="https://meet.google.com/uyp-veyu-nok" target="_blank" class="videocall-btn">📹 Videochiamata</a>
                 <button class="logout-btn" onclick="logout()">Esci</button>
             </div>
@@ -86,6 +92,33 @@
 </div>
 </div>
 </div>
+</div>
+
+<!-- Modal for editing sync link -->
+<div id="editSyncModal" class="modal" onclick="closeEditSyncModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px;">
+        <div class="sync-modal-body">
+            <button class="modal-close" onclick="closeEditSyncModal()">&times;</button>
+            <h2 class="modal-title" id="syncModalTitle">Modifica Link Sincronizzazione</h2>
+            <p style="margin-bottom: 15px; opacity: 0.8;" id="syncModalDescription">
+                Inserisci il link generato dall'estensione di sincronizzazione (es. Teleparty, Syncwatch)
+            </p>
+            <input 
+                type="url" 
+                id="syncLinkInput" 
+                class="sync-input" 
+                placeholder="https://..."
+            >
+            <div class="sync-modal-buttons">
+                <button class="modal-button primary" onclick="saveSyncLink()">
+                    💾 Salva
+                </button>
+                <button class="modal-button secondary" onclick="closeEditSyncModal()">
+                    Annulla
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="script.js"></script>
