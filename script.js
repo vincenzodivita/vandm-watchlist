@@ -1,31 +1,35 @@
-    // Google Sheets API URL
-    const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwSl1vLF1Kvhaj4TlFyyIcLkk7la73nNteGTr-F6vtw8PWCJdpEAnZWjIwKoFv3Np1ntQ/exec';
+// V&M Watchlist - Disney+ e Netflix
+const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwSl1vLF1Kvhaj4TlFyyIcLkk7la73nNteGTr-F6vtw8PWCJdpEAnZWjIwKoFv3Np1ntQ/exec';
+const TMDB_API_KEY = 'e52e82734d4a34d3494787371a7149ba';
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+const PROVIDER_IDS = { disney: 337, netflix: 8 };
 
-    // TMDB API Configuration
-    const TMDB_API_KEY = 'e52e82734d4a34d3494787371a7149ba';
-    const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-    const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
+let currentUser = null;
+let allMovies = [];
+let userLists = { vincenzo: [], millena: [] };
+let seenMovies = { vincenzo: [], millena: [] };
+let currentPage = 1;
+let totalPages = 1;
+let currentRegion = null;
+let currentProvider = 'disney';
+let currentMediaType = 'movie';
+let isSearching = false;
+let currentSearchQuery = '';
+let currentModalMovie = null;
+let syncWatchLink = '';
+let searchTimeout = null;
 
-    // Global State
-    let currentUser = null;
-    let allMovies = [];
-    let userLists = { vincenzo: [], millena: [] };
-    let seenMovies = { vincenzo: [], millena: [] };
-    let isLoadingMovies = false;
-    let currentPage = 1;
-    let totalPages = 1;
-    let currentRegion = null;
-    let isSearching = false;
-    let currentSearchQuery = '';
-    let currentModalMovie = null;
-    let syncWatchLink = '';
-
-    // Translations
     const translations = {
         vincenzo: {
             welcome: 'Ciao Vincenzo! 🇮🇹',
             logout: 'Esci',
             tabCatalog: 'Catalogo Disney+',
+            tabNetflix: 'Catalogo Netflix',
+            moviesLabel: 'Film',
+            seriesLabel: 'Serie TV',
+            providerNetflix: 'Netflix',
+            providerDisney: 'Disney+',
             tabMyList: 'La Mia Lista',
             tabShared: 'Da Vedere Insieme ❤️',
             tabSeen: 'Già Visti ✓',
@@ -67,6 +71,11 @@
             welcome: 'Olá Millena! 🇧🇷',
             logout: 'Sair',
             tabCatalog: 'Catálogo Disney+',
+            tabNetflix: 'Catálogo Netflix',
+            moviesLabel: 'Filmes',
+            seriesLabel: 'Séries',
+            providerNetflix: 'Netflix',
+            providerDisney: 'Disney+',
             tabMyList: 'Minha Lista',
             tabShared: 'Para Assistir Juntos ❤️',
             tabSeen: 'Já Assistidos ✓',
@@ -108,743 +117,546 @@
         }
     };
 
-    function t(key) {
-        return translations[currentUser]?.[key] || key;
-    }
+function t(key) {
+    return translations[currentUser]?.[key] || key;
+}
 
-    // TMDB API Functions
-    async function fetchDisneyMovies(region, page = 1) {
-        if (isLoadingMovies) return { movies: [], totalPages: 1 };
-        isLoadingMovies = true;
+function getCatalogContent() {
+    return document.getElementById('catalogContent');
+}
 
+function getMovieKey(item) {
+    return `${item.id}|${item.provider || 'disney'}|${item.mediaType || 'movie'}`;
+}
+
+function mapTmdbItem(item, mediaType, provider = currentProvider) {
+    const title = mediaType === 'tv' ? item.name : item.title;
+    const date = mediaType === 'tv' ? item.first_air_date : item.release_date;
+    return {
+        id: item.id,
+        title: title || 'Titolo non disponibile',
+        year: date ? new Date(date).getFullYear() : 'N/A',
+        poster: item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : '',
+        overview: item.overview || '',
+        rating: item.vote_average || 0,
+        backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : '',
+        provider,
+        mediaType
+    };
+}
+
+async function fetchCatalog(provider, mediaType, page = 1) {
+    const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+    const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const params = new URLSearchParams({
+        api_key: TMDB_API_KEY,
+        language,
+        page: String(page),
+        sort_by: 'popularity.desc',
+        with_watch_providers: String(PROVIDER_IDS[provider]),
+        watch_region: regionCode,
+        with_watch_monetization_types: 'flatrate'
+    });
+    const response = await fetch(`${TMDB_BASE_URL}/discover/${mediaType}?${params}`);
+    if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+    const data = await response.json();
+    return {
+        movies: (data.results || []).map(item => mapTmdbItem(item, mediaType, provider)),
+        totalPages: Math.min(data.total_pages || 1, 500)
+    };
+}
+
+async function searchCatalog(query, provider, mediaType, page = 1) {
+    if (!query.trim()) return { movies: [], totalPages: 0 };
+    const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+    const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const params = new URLSearchParams({
+        api_key: TMDB_API_KEY, query, language, page: String(page), include_adult: 'false'
+    });
+    const response = await fetch(`${TMDB_BASE_URL}/search/${mediaType}?${params}`);
+    if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+    const data = await response.json();
+    const candidates = (data.results || []).slice(0, 20);
+    const filtered = await Promise.all(candidates.map(async item => {
         try {
-            const watchRegion = region === 'italy' ? 'IT' : 'BR';
-            const language = region === 'italy' ? 'it-IT' : 'pt-BR';
-            
-            const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_watch_providers=337&watch_region=${watchRegion}&language=${language}&sort_by=popularity.desc&page=${page}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            if (!data.results || data.results.length === 0) {
-                const result = await fetchPopularDisneyMovies(page, language);
-                isLoadingMovies = false;
-                return result;
-            }
-            
-            const movies = data.results.map(movie => ({
-                id: movie.id,
-                title: movie.title,
-                year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
-                poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
-                overview: movie.overview,
-                rating: movie.vote_average,
-                backdrop: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : ''
-            }));
-            
-            isLoadingMovies = false;
-            return { movies, totalPages: data.total_pages || 1 };
-            
+            const providerResponse = await fetch(
+                `${TMDB_BASE_URL}/${mediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`
+            );
+            const providerData = await providerResponse.json();
+            const regionalProviders = providerData.results?.[regionCode]?.flatrate || [];
+            return regionalProviders.some(p => p.provider_id === PROVIDER_IDS[provider])
+                ? mapTmdbItem(item, mediaType, provider) : null;
         } catch (error) {
-            console.error('Error fetching from TMDB:', error);
-            isLoadingMovies = false;
-            showError(t('errorLoad'));
-            return { movies: [], totalPages: 1 };
+            console.warn('Provider check failed:', error);
+            return null;
         }
-    }
+    }));
+    return {
+        movies: filtered.filter(Boolean),
+        totalPages: filtered.some(Boolean) ? Math.min(data.total_pages || 1, 500) : 0
+    };
+}
 
-    async function fetchPopularDisneyMovies(page = 1, language = 'en-US') {
-        try {
-            const url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_companies=2|3&language=${language}&sort_by=popularity.desc&page=${page}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            
-            const movies = data.results.map(movie => ({
-                id: movie.id,
-                title: movie.title,
-                year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
-                poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
-                overview: movie.overview,
-                rating: movie.vote_average,
-                backdrop: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : ''
-            }));
-            
-            return { movies, totalPages: data.total_pages || 1 };
-            
-        } catch (error) {
-            console.error('Error fetching popular Disney movies:', error);
-            return { movies: [], totalPages: 1 };
-        }
-    }
-
-    async function searchMovies(query, page = 1) {
-        if (!query || query.trim() === '') {
-            return { movies: [], totalPages: 0 };
-        }
-
-        try {
-            const watchRegion = currentRegion === 'italy' ? 'IT' : 'BR';
-            const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-            
-            const searchUrl = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=${language}&page=${page}`;
-            const response = await fetch(searchUrl);
-            const data = await response.json();
-            
-            if (!data.results || data.results.length === 0) {
-                return { movies: [], totalPages: 0 };
-            }
-            
-            const filteredMovies = [];
-            
-            for (const movie of data.results.slice(0, 20)) {
-                try {
-                    const providersUrl = `${TMDB_BASE_URL}/movie/${movie.id}/watch/providers?api_key=${TMDB_API_KEY}`;
-                    const providersResponse = await fetch(providersUrl);
-                    const providersData = await providersResponse.json();
-                    
-                    const regionData = providersData.results?.[watchRegion];
-                    const hasDisneyPlus = regionData?.flatrate?.some(provider => provider.provider_id === 337);
-                    
-                    if (hasDisneyPlus) {
-                        const detailUrl = `${TMDB_BASE_URL}/movie/${movie.id}?api_key=${TMDB_API_KEY}&language=${language}`;
-                        const detailResponse = await fetch(detailUrl);
-                        const details = await detailResponse.json();
-                        
-                        filteredMovies.push({
-                            id: details.id,
-                            title: details.title,
-                            year: details.release_date ? new Date(details.release_date).getFullYear() : 'N/A',
-                            poster: details.poster_path ? `${TMDB_IMAGE_BASE}${details.poster_path}` : '',
-                            overview: details.overview,
-                            rating: details.vote_average,
-                            backdrop: details.backdrop_path ? `https://image.tmdb.org/t/p/original${details.backdrop_path}` : ''
-                        });
-                    }
-                    
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                } catch (error) {
-                    console.error('Error checking movie providers:', error);
-                }
-            }
-            
-            return {
-                movies: filteredMovies,
-                totalPages: filteredMovies.length > 0 ? Math.ceil(data.total_results / 20) : 0
+// Google Sheets
+async function loadFromSheets() {
+    try {
+        const response = await fetch(`${SHEETS_API_URL}?action=getAll`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Google Sheets error');
+        userLists = { vincenzo: [], millena: [] };
+        seenMovies = { vincenzo: [], millena: [] };
+        (data.movies || []).forEach(row => {
+            if (!['vincenzo', 'millena'].includes(row.user)) return;
+            const item = {
+                id: Number(row.movieId),
+                title: row.title,
+                year: row.year,
+                poster: row.poster,
+                provider: row.provider || 'disney',
+                mediaType: row.mediaType || 'movie'
             };
-            
-        } catch (error) {
-            console.error('Error searching movies:', error);
-            return { movies: [], totalPages: 0 };
-        }
+            userLists[row.user].push(item);
+            if (row.seen === true || row.seen === 'TRUE') seenMovies[row.user].push(item);
+        });
+    } catch (error) {
+        console.error('Error loading from Sheets:', error);
+        showError(t('errorLoad'));
     }
+}
 
-    // Google Sheets API Functions
-    async function loadFromSheets() {
-        try {
-            const response = await fetch(`${SHEETS_API_URL}?action=getAll`);
-            const data = await response.json();
-            
-            if (data.success) {
-                userLists = { vincenzo: [], millena: [] };
-                seenMovies = { vincenzo: [], millena: [] };
-                
-                data.movies.forEach(movie => {
-                    if (movie.user === 'vincenzo' || movie.user === 'millena') {
-                        const movieData = {
-                            id: movie.movieId,
-                            title: movie.title,
-                            year: movie.year,
-                            poster: movie.poster
-                        };
-                        
-                        userLists[movie.user].push(movieData);
-                        
-                        if (movie.seen === true || movie.seen === 'TRUE') {
-                            seenMovies[movie.user].push(movieData);
-                        }
-                    }
-                });
-            }
-        } catch (error) {
-            console.error('Error loading from sheets:', error);
-            showError(t('errorLoad'));
-        }
+async function postToSheets(payload, errorMessage) {
+    try {
+        await fetch(SHEETS_API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        return true;
+    } catch (error) {
+        console.error(error);
+        showError(errorMessage || t('errorSave'));
+        return false;
     }
+}
 
-    async function addToSheets(user, movie) {
-        try {
-            await fetch(SHEETS_API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'add',
-                    user: user,
-                    movieId: movie.id,
-                    title: movie.title,
-                    year: movie.year,
-                    poster: movie.poster
-                })
-            });
-            return true;
-        } catch (error) {
-            console.error('Error adding to sheets:', error);
-            showError(t('errorSave'));
-            return false;
-        }
-    }
+function addToSheets(user, item) {
+    return postToSheets({
+        action: 'add', user, movieId: item.id, title: item.title,
+        year: item.year, poster: item.poster,
+        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+    }, t('errorSave'));
+}
 
-    async function removeFromSheets(user, movieId) {
-        try {
-            await fetch(SHEETS_API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'remove',
-                    user: user,
-                    movieId: movieId
-                })
-            });
-            return true;
-        } catch (error) {
-            console.error('Error removing from sheets:', error);
-            showError(t('errorRemove'));
-            return false;
-        }
-    }
+function removeFromSheets(user, item) {
+    return postToSheets({
+        action: 'remove', user, movieId: item.id,
+        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+    }, t('errorRemove'));
+}
 
-    async function markAsSeenInSheets(movieId, seenStatus) {
-        try {
-            await fetch(SHEETS_API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'markSeen',
-                    movieId: movieId,
-                    seen: seenStatus
-                })
-            });
-            return true;
-        } catch (error) {
-            console.error('Error marking as seen:', error);
-            showError(t('errorSave'));
-            return false;
-        }
-    }
+function markAsSeenInSheets(item, seen) {
+    return postToSheets({
+        action: 'markSeen', movieId: item.id, seen,
+        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+    }, t('errorSave'));
+}
 
-    function showError(message) {
-        const catalogContent = document.getElementById('catalogContent');
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        catalogContent.insertBefore(errorDiv, catalogContent.firstChild);
-        setTimeout(() => errorDiv.remove(), 5000);
-    }
+function showError(message) {
+    const target = getCatalogContent();
+    if (!target) return;
+    const div = document.createElement('div');
+    div.className = 'error-message';
+    div.textContent = message;
+    target.prepend(div);
+    setTimeout(() => div.remove(), 5000);
+}
 
-    // Login & Logout
-    async function login(user) {
-        currentUser = user;
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appScreen').style.display = 'block';
-        
-        document.getElementById('welcomeText').textContent = t('welcome');
-        
-        if (user === 'vincenzo') {
-            document.body.classList.add('vincenzo-color');
-        }
-        
-        updateUILanguage();
-        await loadFromSheets();
-        
-        currentRegion = user === 'vincenzo' ? 'italy' : 'brazil';
-        loadCatalog(1);
-    }
+function showSuccessMessage(message) {
+    const target = getCatalogContent();
+    if (!target) return;
+    const div = document.createElement('div');
+    div.className = 'success-message';
+    div.textContent = message;
+    target.prepend(div);
+    setTimeout(() => div.remove(), 3000);
+}
 
-    function updateUILanguage() {
-        document.querySelector('.logout-btn').textContent = t('logout');
-        const tabs = document.querySelectorAll('.tab-btn');
-        tabs[0].textContent = t('tabCatalog');
-        tabs[1].textContent = t('tabMyList');
-        tabs[2].textContent = t('tabShared');
-        tabs[3].textContent = t('tabSeen');
-        document.getElementById('searchBox').placeholder = t('searchPlaceholder');
-        document.getElementById('sharedTitle').textContent = t('sharedTitle');
-        document.getElementById('seenTitle').textContent = t('seenTitle');
-    }
+// Login
+async function login(user) {
+    currentUser = user;
+    currentRegion = user === 'vincenzo' ? 'italy' : 'brazil';
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
+    document.getElementById('welcomeText').textContent = t('welcome');
+    document.body.classList.toggle('vincenzo-color', user === 'vincenzo');
+    updateUILanguage();
+    await loadFromSheets();
+    await loadSyncLink();
+    switchCatalog('disney', document.getElementById('disneyCatalogBtn'));
+}
 
-    function logout() {
-        currentUser = null;
-        currentRegion = null;
-        allMovies = [];
-        currentPage = 1;
-        totalPages = 1;
-        isSearching = false;
-        currentSearchQuery = '';
-        
-        document.getElementById('loginScreen').style.display = 'flex';
-        document.getElementById('appScreen').style.display = 'none';
-        document.body.classList.remove('vincenzo-color');
-    }
+function updateUILanguage() {
+    document.querySelector('.logout-btn').textContent = t('logout');
+    document.getElementById('disneyCatalogBtn').textContent = t('tabCatalog');
+    document.getElementById('netflixCatalogBtn').textContent = t('tabNetflix');
+    document.getElementById('myListTabBtn').textContent = t('tabMyList');
+    document.getElementById('sharedTabBtn').textContent = t('tabShared');
+    document.getElementById('seenTabBtn').textContent = t('tabSeen');
+    document.getElementById('searchBox').placeholder = currentUser === 'vincenzo'
+        ? (currentProvider === 'netflix' ? 'Cerca su Netflix Italia...' : t('searchPlaceholder'))
+        : (currentProvider === 'netflix' ? 'Buscar na Netflix Brasil...' : t('searchPlaceholder'));
+    document.getElementById('sharedTitle').textContent = t('sharedTitle');
+    document.getElementById('seenTitle').textContent = t('seenTitle');
+    document.getElementById('movieTypeMovies').textContent = t('moviesLabel');
+    document.getElementById('movieTypeTv').textContent = t('seriesLabel');
+}
 
-    // Catalog Functions
-    async function loadCatalog(page = 1) {
-        const region = currentUser === 'vincenzo' ? 'italy' : 'brazil';
-        currentRegion = region;
-        currentPage = page;
-        isSearching = false;
-        currentSearchQuery = '';
-        
-        const searchBox = document.getElementById('searchBox');
-        if (searchBox) searchBox.value = '';
-        
-        document.getElementById('catalogContent').innerHTML = `<div class="loading">${t('loading')}</div>`;
-        
-        const result = await fetchDisneyMovies(region, page);
+function logout() {
+    currentUser = null;
+    currentRegion = null;
+    allMovies = [];
+    currentPage = 1;
+    totalPages = 1;
+    isSearching = false;
+    currentSearchQuery = '';
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('appScreen').style.display = 'none';
+    document.body.classList.remove('vincenzo-color');
+}
+
+function switchCatalog(provider, button) {
+    currentProvider = provider;
+    currentMediaType = provider === 'netflix' ? currentMediaType : 'movie';
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(panel => panel.style.display = 'none');
+    button?.classList.add('active');
+    document.getElementById('catalogTab').style.display = 'block';
+    document.getElementById('mediaTypeControls').style.display = provider === 'netflix' ? 'flex' : 'none';
+    document.getElementById('movieTypeMovies').classList.toggle('active', currentMediaType === 'movie');
+    document.getElementById('movieTypeTv').classList.toggle('active', currentMediaType === 'tv');
+    document.getElementById('searchBox').placeholder = currentUser === 'vincenzo'
+        ? `Cerca su ${provider === 'netflix' ? 'Netflix' : 'Disney+'} Italia...`
+        : `Buscar na ${provider === 'netflix' ? 'Netflix' : 'Disney+'} Brasil...`;
+    loadCatalog(1);
+}
+
+function setMediaType(mediaType, button) {
+    if (currentProvider !== 'netflix') return;
+    currentMediaType = mediaType;
+    document.querySelectorAll('.media-type-btn').forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
+    loadCatalog(1);
+}
+
+async function loadCatalog(page = 1) {
+    currentPage = page;
+    isSearching = false;
+    currentSearchQuery = '';
+    document.getElementById('searchBox').value = '';
+    getCatalogContent().innerHTML = `<div class="loading">${t('loading')}</div>`;
+    try {
+        const result = await fetchCatalog(currentProvider, currentMediaType, page);
         allMovies = result.movies;
         totalPages = result.totalPages;
-        
         displayCatalog(allMovies);
         updatePagination();
+    } catch (error) {
+        console.error('Catalog load error:', error);
+        getCatalogContent().innerHTML = `<div class="empty-state">${t('errorLoad')}</div>`;
     }
+}
 
-    async function loadSearchResults(query, page = 1) {
-        isSearching = true;
-        currentSearchQuery = query;
-        currentPage = page;
-        
-        document.getElementById('catalogContent').innerHTML = `<div class="loading">${t('loading')}</div>`;
-        
-        const result = await searchMovies(query, page);
+async function loadSearchResults(query, page = 1) {
+    isSearching = true;
+    currentSearchQuery = query;
+    currentPage = page;
+    getCatalogContent().innerHTML = `<div class="loading">${t('loading')}</div>`;
+    try {
+        const result = await searchCatalog(query, currentProvider, currentMediaType, page);
         allMovies = result.movies;
         totalPages = result.totalPages;
-        
-        if (allMovies.length === 0) {
-            document.getElementById('catalogContent').innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
-        } else {
-            displayCatalog(allMovies);
-            updatePagination();
-        }
-    }
-
-    function updatePagination() {
-        const catalogContent = document.getElementById('catalogContent');
-        
-        if (totalPages <= 1) return;
-        
-        const paginationHTML = `
-            <div class="pagination">
-                <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>
-                    ◀ ${t('previous')}
-                </button>
-                <span class="page-info">
-                    ${t('page')} ${currentPage} ${t('of')} ${totalPages}
-                </span>
-                <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>
-                    ${t('next')} ▶
-                </button>
-            </div>
-        `;
-        catalogContent.innerHTML += paginationHTML;
-    }
-
-    async function changePage(newPage) {
-        if (newPage < 1 || newPage > totalPages) return;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        
-        if (isSearching && currentSearchQuery) {
-            await loadSearchResults(currentSearchQuery, newPage);
-        } else {
-            await loadCatalog(newPage);
-        }
-    }
-
-    function displayCatalog(movies) {
-        const catalogContent = document.getElementById('catalogContent');
-        
-        if (movies.length === 0) {
-            catalogContent.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
-            return;
-        }
-
-        const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
-
-        catalogContent.innerHTML = '<div class="movies-grid">' + movies.map(movie => {
-            const isInMyList = userLists[currentUser].some(m => m.id === movie.id);
-            const isInPartnerList = userLists[otherUser].some(m => m.id === movie.id);
-            
-            return `
-                <div class="movie-card">
-                    ${isInPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
-                    <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onclick="openMovieModal(${movie.id})" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
-                    <div class="movie-title" onclick="openMovieModal(${movie.id})">${movie.title}</div>
-                    <div class="movie-year">${movie.year}</div>
-                    ${movie.rating ? `<div class="movie-rating">⭐ ${movie.rating.toFixed(1)}</div>` : ''}
-                    <button class="add-btn ${isInMyList ? 'added' : ''}" onclick="toggleMovie(${movie.id})">
-                        ${isInMyList ? t('addedButton') : t('addButton')}
-                    </button>
-                </div>
-            `;
-        }).join('') + '</div>';
-    }
-
-    async function toggleMovie(movieId) {
-        const movie = allMovies.find(m => m.id === movieId);
-        if (!movie) return;
-
-        const index = userLists[currentUser].findIndex(m => m.id === movieId);
-        
-        if (index === -1) {
-            userLists[currentUser].push(movie);
-            await addToSheets(currentUser, movie);
-        } else {
-            userLists[currentUser].splice(index, 1);
-            await removeFromSheets(currentUser, movieId);
-        }
-
         displayCatalog(allMovies);
+        updatePagination();
+    } catch (error) {
+        console.error('Search error:', error);
+        getCatalogContent().innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+    }
+}
+
+function updatePagination() {
+    if (totalPages <= 1) return;
+    getCatalogContent().insertAdjacentHTML('beforeend', `
+        <div class="pagination">
+            <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>◀ ${t('previous')}</button>
+            <span class="page-info">${t('page')} ${currentPage} ${t('of')} ${totalPages}</span>
+            <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>${t('next')} ▶</button>
+        </div>`);
+}
+
+async function changePage(page) {
+    if (page < 1 || page > totalPages) return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isSearching && currentSearchQuery) await loadSearchResults(currentSearchQuery, page);
+    else await loadCatalog(page);
+}
+
+function renderMovieCard(item, options = {}) {
+    const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
+    const key = getMovieKey(item);
+    const inMyList = userLists[currentUser].some(m => getMovieKey(m) === key);
+    const inPartnerList = userLists[otherUser].some(m => getMovieKey(m) === key);
+    const isSeen = seenMovies[currentUser].some(m => getMovieKey(m) === key);
+    const mediaLabel = item.mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel');
+    const providerLabel = item.provider === 'netflix' ? 'Netflix' : 'Disney+';
+    return `<div class="movie-card">
+        ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
+        ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
+        <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')" onerror="this.style.visibility='hidden'">
+        <div class="movie-title" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
+        <div class="movie-year">${item.year || 'N/A'} · ${providerLabel} · ${mediaLabel}</div>
+        ${item.rating ? `<div class="movie-rating">⭐ ${Number(item.rating).toFixed(1)}</div>` : ''}
+        ${options.action || `<button class="add-btn ${inMyList ? 'added' : ''}" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">${inMyList ? t('addedButton') : t('addButton')}</button>`}
+    </div>`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
+}
+
+function displayCatalog(items) {
+    const target = getCatalogContent();
+    if (!items.length) {
+        target.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+        return;
+    }
+    target.innerHTML = `<div class="movies-grid">${items.map(item => renderMovieCard(item, { showPartner: true })).join('')}</div>`;
+}
+
+async function toggleMovie(id, mediaType = currentMediaType, provider = currentProvider) {
+    const key = `${id}|${provider}|${mediaType}`;
+    const item = allMovies.find(m => getMovieKey(m) === key)
+        || userLists[currentUser].find(m => getMovieKey(m) === key)
+        || currentModalMovie;
+    if (!item) return;
+    const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
+    if (index === -1) {
+        userLists[currentUser].push(item);
+        await addToSheets(currentUser, item);
+    } else {
+        const [removed] = userLists[currentUser].splice(index, 1);
+        seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
+        await removeFromSheets(currentUser, removed);
+    }
+    displayCatalog(allMovies);
+    updateMyList();
+    updateSharedList();
+    updateSeenList();
+}
+
+function updateMyList() {
+    const target = document.getElementById('mylistContent');
+    const items = userLists[currentUser];
+    target.innerHTML = items.length
+        ? `<div class="movies-grid">${items.map(item => renderMovieCard(item)).join('')}</div>`
+        : `<div class="empty-state">${t('emptyMyList')}</div>`;
+}
+
+function getSharedItems() {
+    return userLists.vincenzo.filter(item => {
+        const key = getMovieKey(item);
+        return userLists.millena.some(other => getMovieKey(other) === key)
+            && !(seenMovies.vincenzo.some(m => getMovieKey(m) === key)
+              && seenMovies.millena.some(m => getMovieKey(m) === key));
+    });
+}
+
+function updateSharedList() {
+    const target = document.getElementById('sharedContent');
+    const items = getSharedItems();
+    target.innerHTML = items.length
+        ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
+            action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">${t('seenButton')}</button>`
+        })).join('')}</div>`
+        : `<div class="empty-state">${t('emptyShared')}</div>`;
+}
+
+function updateSeenList() {
+    const target = document.getElementById('seenContent');
+    const items = seenMovies.vincenzo.filter(item =>
+        seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
+    target.innerHTML = items.length
+        ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
+            action: `<button class="add-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">${t('notSeenButton')}</button>`
+        })).join('')}</div>`
+        : `<div class="empty-state">${t('emptySeen')}</div>`;
+}
+
+async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
+    const key = `${id}|${provider}|${mediaType}`;
+    const item = userLists.vincenzo.find(m => getMovieKey(m) === key)
+        || userLists.millena.find(m => getMovieKey(m) === key);
+    if (!item) return;
+    for (const user of ['vincenzo', 'millena']) {
+        seenMovies[user] = seen
+            ? [...seenMovies[user].filter(m => getMovieKey(m) !== key), item]
+            : seenMovies[user].filter(m => getMovieKey(m) !== key);
+    }
+    await markAsSeenInSheets(item, seen);
+    updateSharedList();
+    updateSeenList();
+    updateMyList();
+}
+
+function switchTab(tab, button) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(panel => panel.style.display = 'none');
+    button?.classList.add('active');
+    if (tab === 'mylist') {
+        document.getElementById('mylistTab').style.display = 'block';
         updateMyList();
+    } else if (tab === 'shared') {
+        document.getElementById('sharedTab').style.display = 'block';
         updateSharedList();
-    }
-
-    // List Updates
-    function updateMyList() {
-        const mylistContent = document.getElementById('mylistContent');
-        const myMovies = userLists[currentUser];
-
-        if (myMovies.length === 0) {
-            mylistContent.innerHTML = `<div class="empty-state">${t('emptyMyList')}</div>`;
-            return;
-        }
-
-        mylistContent.innerHTML = myMovies.map(movie => `
-            <div class="movie-card">
-                <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
-                <div class="movie-title">${movie.title}</div>
-                <div class="movie-year">${movie.year}</div>
-                <button class="add-btn added" onclick="toggleMovie(${movie.id})">${t('removeButton')}</button>
-            </div>
-        `).join('');
-    }
-
-    function updateSharedList() {
-        const sharedContent = document.getElementById('sharedContent');
-        const sharedMovies = userLists.vincenzo.filter(movie => 
-            userLists.millena.some(m => m.id === movie.id)
-        ).filter(movie => 
-            !(seenMovies.vincenzo.some(m => m.id === movie.id) && 
-            seenMovies.millena.some(m => m.id === movie.id))
-        );
-
-        if (sharedMovies.length === 0) {
-            sharedContent.innerHTML = `<div class="empty-state">${t('emptyShared')}</div>`;
-            return;
-        }
-
-        sharedContent.innerHTML = sharedMovies.map(movie => `
-            <div class="movie-card">
-                <div class="shared-badge">${t('sharedBadge')}</div>
-                <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
-                <div class="movie-title">${movie.title}</div>
-                <div class="movie-year">${movie.year}</div>
-                <button class="seen-btn" onclick="toggleSeen(${movie.id}, true)">${t('seenButton')}</button>
-            </div>
-        `).join('');
-    }
-
-    function updateSeenList() {
-        const seenContent = document.getElementById('seenContent');
-        const sharedSeenMovies = seenMovies.vincenzo.filter(movie => 
-            seenMovies.millena.some(m => m.id === movie.id)
-        );
-
-        if (sharedSeenMovies.length === 0) {
-            seenContent.innerHTML = `<div class="empty-state">${t('emptySeen')}</div>`;
-            return;
-        }
-
-        seenContent.innerHTML = sharedSeenMovies.map(movie => `
-            <div class="movie-card">
-                <div class="seen-badge">${t('seenBadge')}</div>
-                <img src="${movie.poster}" alt="${movie.title}" class="movie-poster" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'300\\'%3E%3Crect fill=\\'%23333\\' width=\\'200\\' height=\\'300\\'/%3E%3Ctext fill=\\'%23fff\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\'%3E🎬%3C/text%3E%3C/svg%3E'">
-                <div class="movie-title">${movie.title}</div>
-                <div class="movie-year">${movie.year}</div>
-                <button class="add-btn" onclick="toggleSeen(${movie.id}, false)">${t('notSeenButton')}</button>
-            </div>
-        `).join('');
-    }
-
-    async function toggleSeen(movieId, markAsSeen) {
-        const movie = userLists.vincenzo.find(m => m.id === movieId) || 
-                    userLists.millena.find(m => m.id === movieId);
-        
-        if (!movie) return;
-        
-        if (markAsSeen) {
-            if (!seenMovies.vincenzo.some(m => m.id === movieId)) {
-                seenMovies.vincenzo.push(movie);
-            }
-            if (!seenMovies.millena.some(m => m.id === movieId)) {
-                seenMovies.millena.push(movie);
-            }
-        } else {
-            seenMovies.vincenzo = seenMovies.vincenzo.filter(m => m.id !== movieId);
-            seenMovies.millena = seenMovies.millena.filter(m => m.id !== movieId);
-        }
-        
-        await markAsSeenInSheets(movieId, markAsSeen);
-        
-        updateSharedList();
+    } else if (tab === 'seen') {
+        document.getElementById('seenTab').style.display = 'block';
         updateSeenList();
     }
+}
 
-    // Tab Switching
-    function switchTab(tab) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
-        
-        event.target.classList.add('active');
-        
-        if (tab === 'catalog') {
-            document.getElementById('catalogTab').style.display = 'block';
-        } else if (tab === 'mylist') {
-            document.getElementById('mylistTab').style.display = 'block';
-            updateMyList();
-        } else if (tab === 'shared') {
-            document.getElementById('sharedTab').style.display = 'block';
-            updateSharedList();
-        } else if (tab === 'seen') {
-            document.getElementById('seenTab').style.display = 'block';
-            updateSeenList();
-        }
-    }
-
-    // Search
-    let searchTimeout = null;
-
-    function handleSearch() {
-        const searchBox = document.getElementById('searchBox');
-        const query = searchBox.value.trim();
-        
-        clearTimeout(searchTimeout);
-        
-        if (query === '') {
-            loadCatalog(1);
-            return;
-        }
-        
-        searchTimeout = setTimeout(() => {
-            loadSearchResults(query, 1);
-        }, 500);
-    }
-
-    // Modal Functions
-    async function openMovieModal(movieId) {
-        try {
-            const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-            
-            const detailUrl = `${TMDB_BASE_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&language=${language}`;
-            const response = await fetch(detailUrl);
-            const movie = await response.json();
-            
-            currentModalMovie = {
-                id: movie.id,
-                title: movie.title,
-                year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
-                poster: movie.poster_path ? `${TMDB_IMAGE_BASE}${movie.poster_path}` : '',
-                overview: movie.overview,
-                rating: movie.vote_average
-            };
-            
-            document.getElementById('modalBackdrop').src = movie.backdrop_path ? 
-                `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : 
-                currentModalMovie.poster;
-            document.getElementById('modalTitle').textContent = movie.title;
-            document.getElementById('modalYear').textContent = currentModalMovie.year;
-            document.getElementById('modalRating').textContent = movie.vote_average ? 
-                `⭐ ${movie.vote_average.toFixed(1)}` : '';
-            document.getElementById('modalOverview').textContent = movie.overview || 
-                (currentUser === 'vincenzo' ? 'Nessuna descrizione disponibile.' : 'Nenhuma descrição disponível.');
-            
-            const isInList = userLists[currentUser].some(m => m.id === movieId);
-            const addButton = document.getElementById('modalAddButton');
-            addButton.textContent = isInList ? t('removeButton') : t('addButton');
-            addButton.className = `modal-button ${isInList ? 'secondary' : 'primary'}`;
-            
-            document.querySelector('.modal-button.secondary:last-child').textContent = t('close');
-            
-            document.getElementById('movieModal').classList.add('active');
-            document.body.style.overflow = 'hidden';
-            
-        } catch (error) {
-            console.error('Error loading movie details:', error);
-        }
-    }
-
-    function closeModal(event) {
-        if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) {
-            return;
-        }
-        
-        document.getElementById('movieModal').classList.remove('active');
-        document.body.style.overflow = 'auto';
-        currentModalMovie = null;
-    }
-
-    async function toggleMovieFromModal() {
-        if (!currentModalMovie) return;
-        
-        await toggleMovie(currentModalMovie.id);
-        
-        const isInList = userLists[currentUser].some(m => m.id === currentModalMovie.id);
-        const addButton = document.getElementById('modalAddButton');
-        addButton.textContent = isInList ? t('removeButton') : t('addButton');
-        addButton.className = `modal-button ${isInList ? 'secondary' : 'primary'}`;
-    }
-
-    // Funzioni per gestire il link di sincronizzazione
-    async function loadSyncLink() {
-        try {
-            const response = await fetch(`${SHEETS_API_URL}?action=getSyncLink`);
-            const data = await response.json();
-            
-            if (data.success && data.link) {
-                syncWatchLink = data.link;
-                updateSyncButton();
-            }
-        } catch (error) {
-            console.error('Error loading sync link:', error);
-        }
-    }
-
-    function updateSyncButton() {
-        const syncBtn = document.getElementById('syncWatchBtn');
-        if (syncWatchLink && syncWatchLink.trim() !== '') {
-            syncBtn.classList.remove('disabled');
-            syncBtn.style.cursor = 'pointer';
-        } else {
-            syncBtn.classList.add('disabled');
-            syncBtn.style.cursor = 'not-allowed';
-        }
-    }
-
-    function openSyncWatch() {
-        if (!syncWatchLink || syncWatchLink.trim() === '') {
-            alert(t('noSyncLink'));
-            return;
-        }
-        window.open(syncWatchLink, '_blank');
-    }
-
-    function openEditSyncModal() {
-        document.getElementById('syncModalTitle').textContent = t('syncModalTitle');
-        document.getElementById('syncModalDescription').textContent = t('syncModalDescription');
-        document.getElementById('syncLinkInput').placeholder = t('syncPlaceholder');
-        document.getElementById('syncLinkInput').value = syncWatchLink || '';
-        
-        const saveBtn = document.querySelector('#editSyncModal .modal-button.primary');
-        const cancelBtn = document.querySelector('#editSyncModal .modal-button.secondary');
-        saveBtn.textContent = t('save');
-        cancelBtn.textContent = t('cancel');
-        
-        document.getElementById('editSyncModal').classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
-
-    function closeEditSyncModal(event) {
-        if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) {
-            return;
-        }
-        
-        document.getElementById('editSyncModal').classList.remove('active');
-        document.body.style.overflow = 'auto';
-    }
-
-    async function saveSyncLink() {
-        const input = document.getElementById('syncLinkInput');
-        const newLink = input.value.trim();
-        
-        try {
-            await fetch(SHEETS_API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'saveSyncLink',
-                    link: newLink
-                })
-            });
-            
-            syncWatchLink = newLink;
-            updateSyncButton();
-            closeEditSyncModal();
-            
-            // Mostra messaggio di successo
-            showSuccessMessage(t('syncSaved'));
-            
-        } catch (error) {
-            console.error('Error saving sync link:', error);
-            showError(t('syncError'));
-        }
-    }
-
-    function showSuccessMessage(message) {
-        const catalogContent = document.getElementById('catalogContent');
-        const successDiv = document.createElement('div');
-        successDiv.className = 'error-message';
-        successDiv.style.background = 'rgba(16, 185, 129, 0.2)';
-        successDiv.style.borderColor = '#10b981';
-        successDiv.textContent = message;
-        catalogContent.insertBefore(successDiv, catalogContent.firstChild);
-        setTimeout(() => successDiv.remove(), 3000);
-    }
-
-    // Modifica la funzione login per caricare anche il sync link
-    async function login(user) {
-        currentUser = user;
-        document.getElementById('loginScreen').style.display = 'none';
-        document.getElementById('appScreen').style.display = 'block';
-        
-        document.getElementById('welcomeText').textContent = t('welcome');
-        
-        if (user === 'vincenzo') {
-            document.body.classList.add('vincenzo-color');
-        }
-        
-        updateUILanguage();
-        await loadFromSheets();
-        await loadSyncLink(); // Aggiungi questa riga
-        
-        currentRegion = user === 'vincenzo' ? 'italy' : 'brazil';
+function handleSearch() {
+    const query = document.getElementById('searchBox').value.trim();
+    clearTimeout(searchTimeout);
+    if (!query) {
         loadCatalog(1);
+        return;
     }
+    searchTimeout = setTimeout(() => loadSearchResults(query, 1), 450);
+}
 
-    // Aggiungi listener per ESC anche sul modal di edit sync
-    document.addEventListener('DOMContentLoaded', () => {
-        const searchBox = document.getElementById('searchBox');
-        if (searchBox) {
-            searchBox.addEventListener('input', handleSearch);
-        }
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                closeEditSyncModal();
-            }
-        });
-    });
+// Movie details modal
+async function openMovieModal(id, mediaType = currentMediaType, provider = currentProvider) {
+    try {
+        const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+        const response = await fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${TMDB_API_KEY}&language=${language}`);
+        if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+        const details = await response.json();
+        const item = mapTmdbItem(details, mediaType, provider);
+        currentModalMovie = item;
+        document.getElementById('modalBackdrop').src = item.backdrop || item.poster;
+        document.getElementById('modalTitle').textContent = item.title;
+        document.getElementById('modalYear').textContent = `${item.year} · ${provider === 'netflix' ? 'Netflix' : 'Disney+'} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
+        document.getElementById('modalRating').textContent = item.rating ? `⭐ ${Number(item.rating).toFixed(1)}` : '';
+        document.getElementById('modalOverview').textContent = item.overview || 'Nessuna descrizione disponibile.';
+        updateModalAddButton();
+        document.getElementById('movieModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    } catch (error) {
+        console.error('Error loading details:', error);
+    }
+}
 
-    // Event Listeners
-    document.addEventListener('DOMContentLoaded', () => {
-        const searchBox = document.getElementById('searchBox');
-        if (searchBox) {
-            searchBox.addEventListener('input', handleSearch);
+function updateModalAddButton() {
+    if (!currentModalMovie) return;
+    const inList = userLists[currentUser].some(m => getMovieKey(m) === getMovieKey(currentModalMovie));
+    const button = document.getElementById('modalAddButton');
+    button.textContent = inList ? t('removeButton') : t('addButton');
+    button.className = `modal-button ${inList ? 'secondary' : 'primary'}`;
+}
+
+function closeModal(event) {
+    if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) return;
+    document.getElementById('movieModal').classList.remove('active');
+    document.body.style.overflow = 'auto';
+    currentModalMovie = null;
+}
+
+async function toggleMovieFromModal() {
+    if (!currentModalMovie) return;
+    const item = currentModalMovie;
+    const key = getMovieKey(item);
+    const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
+    if (index === -1) {
+        userLists[currentUser].push(item);
+        await addToSheets(currentUser, item);
+    } else {
+        const [removed] = userLists[currentUser].splice(index, 1);
+        seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
+        await removeFromSheets(currentUser, removed);
+    }
+    displayCatalog(allMovies);
+    updateMyList();
+    updateSharedList();
+    updateSeenList();
+    updateModalAddButton();
+}
+
+// Sync link
+async function loadSyncLink() {
+    try {
+        const response = await fetch(`${SHEETS_API_URL}?action=getSyncLink`);
+        const data = await response.json();
+        if (data.success) {
+            syncWatchLink = data.link || '';
+            updateSyncButton();
         }
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
+    } catch (error) { console.error('Error loading sync link:', error); }
+}
+
+function updateSyncButton() {
+    const button = document.getElementById('syncWatchBtn');
+    button.classList.toggle('disabled', !syncWatchLink.trim());
+    button.style.cursor = syncWatchLink.trim() ? 'pointer' : 'not-allowed';
+}
+
+function openSyncWatch() {
+    if (!syncWatchLink.trim()) return alert(t('noSyncLink'));
+    window.open(syncWatchLink, '_blank', 'noopener');
+}
+
+function openEditSyncModal() {
+    document.getElementById('syncModalTitle').textContent = t('syncModalTitle');
+    document.getElementById('syncModalDescription').textContent = t('syncModalDescription');
+    document.getElementById('syncLinkInput').placeholder = t('syncPlaceholder');
+    document.getElementById('syncLinkInput').value = syncWatchLink;
+    document.querySelector('#editSyncModal .modal-button.primary').textContent = t('save');
+    document.querySelector('#editSyncModal .modal-button.secondary').textContent = t('cancel');
+    document.getElementById('editSyncModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeEditSyncModal(event) {
+    if (event && event.target !== event.currentTarget && !event.target.classList.contains('modal-close')) return;
+    document.getElementById('editSyncModal').classList.remove('active');
+    document.body.style.overflow = 'auto';
+}
+
+async function saveSyncLink() {
+    const newLink = document.getElementById('syncLinkInput').value.trim();
+    try {
+        await fetch(SHEETS_API_URL, {
+            method: 'POST', mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'saveSyncLink', link: newLink })
         });
+        syncWatchLink = newLink;
+        updateSyncButton();
+        closeEditSyncModal();
+        showSuccessMessage(t('syncSaved'));
+    } catch (error) {
+        console.error('Error saving sync link:', error);
+        showError(t('syncError'));
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('searchBox')?.addEventListener('input', handleSearch);
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            closeModal();
+            closeEditSyncModal();
+        }
     });
+});

@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Disney+ Watchlist Condivisa</title>
+<title>V&M Watchlist</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <!-- Login Screen -->
 <div id="loginScreen" class="login-screen">
 <div class="login-box">
-<h1>🎬 Disney+ Watchlist</h1>
+<h1>🎬 V&M Watchlist</h1>
 <div class="user-buttons">
 <button class="user-btn vincenzo-btn" onclick="login('vincenzo')">Vincenzo 🇮🇹</button>
 <button class="user-btn millena-btn" onclick="login('millena')">Millena 🇧🇷</button>
@@ -35,16 +35,21 @@
             </div>
         </div>
 <div class="tabs">
-<button class="tab-btn active" onclick="switchTab('catalog')">Catalogo Disney+</button>
-<button class="tab-btn" onclick="switchTab('mylist')">La Mia Lista</button>
-<button class="tab-btn" onclick="switchTab('shared')">Da Vedere Insieme ❤️</button>
-<button class="tab-btn" onclick="switchTab('seen')">Già Visti ✓</button>
+<button id="disneyCatalogBtn" class="tab-btn active" onclick="switchCatalog('disney', this)">Catalogo Disney+</button>
+<button id="netflixCatalogBtn" class="tab-btn" onclick="switchCatalog('netflix', this)">Catalogo Netflix</button>
+<button id="myListTabBtn" class="tab-btn" onclick="switchTab('mylist', this)">La Mia Lista</button>
+<button id="sharedTabBtn" class="tab-btn" onclick="switchTab('shared', this)">Da Vedere Insieme ❤️</button>
+<button id="seenTabBtn" class="tab-btn" onclick="switchTab('seen', this)">Già Visti ✓</button>
 </div>
 
 <div class="content">
 <!-- Catalog Tab -->
 <div id="catalogTab" class="tab-content">
-<input type="text" id="searchBox" class="search-box" placeholder="Cerca film...">
+<input type="text" id="searchBox" class="search-box" placeholder="Cerca su Disney+...">
+<div id="mediaTypeControls" class="media-type-controls" style="display: none;">
+<button id="movieTypeMovies" class="media-type-btn active" onclick="setMediaType('movie', this)">Film</button>
+<button id="movieTypeTv" class="media-type-btn" onclick="setMediaType('tv', this)">Serie TV</button>
+</div>
 <div id="catalogContent" class="loading">Caricamento catalogo...</div>
 </div>
 
