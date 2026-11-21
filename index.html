@@ -60,7 +60,13 @@
                             <button id="providerDisneyBtn" class="filter-btn" onclick="toggleProvider('disney')">Disney+</button>
                             <button id="providerNetflixBtn" class="filter-btn" onclick="toggleProvider('netflix')">Netflix</button>
                             <button id="providerPrimeBtn" class="filter-btn" onclick="toggleProvider('prime')">Prime Video</button>
-                            <button id="providerAppleBtn" class="filter-btn" onclick="toggleProvider('apple')">Apple TV+</button>
+                        </div>
+                    </div>
+
+                    <div class="filter-row">
+                        <span id="labelFilterView" class="filter-label">Filtra:</span>
+                        <div class="filter-buttons">
+                            <button id="filterUnsavedBtn" class="filter-btn filter-toggle-btn" onclick="toggleFilterUnsaved(this)">👁️ Solo non in lista o visti</button>
                         </div>
                     </div>
                 </div>
@@ -73,6 +79,8 @@
 
             <!-- List Tab -->
             <div id="listTab" class="tab-content" style="display: none;">
+                <input type="text" id="listSearchBox" class="search-box" placeholder="Cerca tra i titoli salvati...">
+
                 <div class="filter-section">
                     <div class="filter-row">
                         <div id="listTypeControls" class="filter-buttons list-filter-buttons">

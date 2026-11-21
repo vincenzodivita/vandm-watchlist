@@ -167,6 +167,70 @@
         opacity: 0.8;
     }
 
+    .poster-container {
+        position: relative;
+        width: 100%;
+        height: 250px;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+    }
+
+    .poster-container .movie-poster {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        margin-bottom: 0;
+        border-radius: 8px;
+        display: block;
+    }
+
+    .platform-badges {
+        position: absolute;
+        bottom: 8px;
+        left: 8px;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        z-index: 2;
+    }
+
+    .platform-badge {
+        padding: 3px 7px;
+        border-radius: 5px;
+        font-size: 0.7em;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .platform-badge.disney {
+        background: rgba(11, 29, 58, 0.95);
+        border-color: #0063e5;
+        color: #38bdf8;
+    }
+
+    .platform-badge.netflix {
+        background: rgba(31, 4, 6, 0.95);
+        border-color: #e50914;
+        color: #f87171;
+    }
+
+    .platform-badge.prime {
+        background: rgba(11, 32, 45, 0.95);
+        border-color: #00a8e1;
+        color: #38bdf8;
+    }
+
+    .filter-toggle-btn.active {
+        background: rgba(16, 185, 129, 0.25);
+        border-color: #10b981;
+        color: #a7f3d0;
+    }
+
     .movie-poster {
         width: 100%;
         height: 250px;
@@ -260,14 +324,15 @@
 
     .partner-badge {
         position: absolute;
-        top: 10px;
-        right: 10px;
+        top: 8px;
+        right: 8px;
         background: #3b82f6;
-        padding: 5px 10px;
+        padding: 4px 8px;
         border-radius: 5px;
-        font-size: 0.75em;
+        font-size: 0.72em;
         font-weight: bold;
         z-index: 2;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
 
     .vincenzo-color .partner-badge {
@@ -276,24 +341,27 @@
 
     .shared-badge {
         position: absolute;
-        top: 10px;
-        right: 10px;
+        top: 8px;
+        right: 8px;
         background: #ec4899;
-        padding: 5px 10px;
+        padding: 4px 8px;
         border-radius: 5px;
-        font-size: 0.75em;
+        font-size: 0.72em;
         font-weight: bold;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
 
     .seen-badge {
         position: absolute;
-        top: 10px;
-        left: 10px;
+        top: 8px;
+        left: 8px;
         background: #8b5cf6;
-        padding: 5px 10px;
+        padding: 4px 8px;
         border-radius: 5px;
-        font-size: 0.75em;
+        font-size: 0.72em;
         font-weight: bold;
+        z-index: 2;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
 
     .shared-list {

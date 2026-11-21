@@ -7,8 +7,7 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 const PROVIDERS = {
     disney: { id: 337, name: 'Disney+' },
     netflix: { id: 8, name: 'Netflix' },
-    prime: { id: 119, name: 'Prime Video' },
-    apple: { id: 350, name: 'Apple TV+' }
+    prime: { id: 119, name: 'Prime Video' }
 };
 
 let currentUser = null;
@@ -22,6 +21,8 @@ let currentMainTab = 'catalog'; // 'catalog' or 'list'
 let currentMediaType = 'movie';  // 'movie' or 'tv'
 let selectedProviders = [];     // empty = all platforms
 let currentListSubTab = 'mylist'; // 'mylist', 'shared', or 'seen'
+let filterOnlyUnsaved = false;
+let listSearchQuery = '';
 let isSearching = false;
 let currentSearchQuery = '';
 let currentModalMovie = null;
@@ -52,12 +53,17 @@ const translations = {
         subTabSeen: 'Già Visti ✓',
         filterType: 'Tipo:',
         filterPlatforms: 'Piattaforme:',
+        filterViewLabel: 'Filtra:',
+        filterUnsaved: '👁️ Solo non in lista o visti',
         platformAll: 'Tutte',
         moviesLabel: 'Film',
         seriesLabel: 'Serie TV',
         searchPlaceholder: 'Cerca film o serie TV...',
+        searchPlaceholderList: 'Cerca tra i titoli salvati...',
         loading: 'Caricamento catalogo...',
         noMovies: 'Nessun titolo trovato',
+        noMoviesSearch: 'Nessun titolo corrisponde alla ricerca',
+        allMoviesSaved: 'Tutti i titoli di questa pagina sono già nella tua lista o visti! 🍿',
         addButton: '+ Aggiungi',
         addedButton: '✓ Nella mia lista',
         removeButton: 'Rimuovi',
@@ -106,12 +112,17 @@ const translations = {
         subTabSeen: 'Já Assistidos ✓',
         filterType: 'Tipo:',
         filterPlatforms: 'Plataformas:',
+        filterViewLabel: 'Filtrar:',
+        filterUnsaved: '👁️ Apenas não salvos / vistos',
         platformAll: 'Todas',
         moviesLabel: 'Filmes',
         seriesLabel: 'Séries',
         searchPlaceholder: 'Buscar filmes ou séries...',
+        searchPlaceholderList: 'Buscar nos títulos salvos...',
         loading: 'Carregando catálogo...',
         noMovies: 'Nenhum título encontrado',
+        noMoviesSearch: 'Nenhum título corresponde à busca',
+        allMoviesSaved: 'Todos os títulos desta página já estão na sua lista ou foram assistidos! 🍿',
         addButton: '+ Adicionar',
         addedButton: '✓ Na minha lista',
         removeButton: 'Remover',
@@ -288,7 +299,6 @@ async function searchCatalog(query, page = 1) {
     const data = await response.json();
     const candidates = (data.results || []).slice(0, 20);
 
-    // Se non ci sono filtri provider selezionati (Tutte), restituisce subito i risultati senza 20 chiamate extra
     if (selectedProviders.length === 0) {
         const result = {
             movies: candidates.map(item => mapTmdbItem(item, currentMediaType, 'all')),
@@ -478,13 +488,8 @@ async function login(user) {
     document.body.classList.toggle('vincenzo-color', user === 'vincenzo');
     updateUILanguage();
 
-    // 1. Ripristino immediato da cache locale
     loadCachedSheetsData();
-
-    // 2. Avvio immediato della visualizzazione catalogo
     switchMainTab('catalog', document.getElementById('mainTabCatalogBtn'));
-
-    // 3. Sync in background con Sheets
     syncWithSheets();
 }
 
@@ -495,9 +500,14 @@ function updateUILanguage() {
     document.getElementById('searchBox').placeholder = t('searchPlaceholder');
     document.getElementById('labelMediaType').textContent = t('filterType');
     document.getElementById('labelPlatforms').textContent = t('filterPlatforms');
+    document.getElementById('labelFilterView').textContent = t('filterViewLabel');
     document.getElementById('providerAllBtn').textContent = t('platformAll');
     document.getElementById('movieTypeMovies').textContent = t('moviesLabel');
     document.getElementById('movieTypeTv').textContent = t('seriesLabel');
+    document.getElementById('filterUnsavedBtn').textContent = t('filterUnsaved');
+
+    const listSearch = document.getElementById('listSearchBox');
+    if (listSearch) listSearch.placeholder = t('searchPlaceholderList');
 
     document.getElementById('listTypeMyListBtn').textContent = t('subTabMyList');
     document.getElementById('listTypeSharedBtn').textContent = t('subTabShared');
@@ -522,6 +532,8 @@ function logout() {
     selectedProviders = [];
     currentMainTab = 'catalog';
     currentListSubTab = 'mylist';
+    listSearchQuery = '';
+    filterOnlyUnsaved = false;
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('appScreen').style.display = 'none';
     document.body.classList.remove('vincenzo-color');
@@ -566,6 +578,11 @@ function renderCurrentListSubTab() {
     }
 }
 
+function handleListSearch() {
+    listSearchQuery = document.getElementById('listSearchBox')?.value.trim().toLowerCase() || '';
+    renderCurrentListSubTab();
+}
+
 // Media Type Filter (Film / Serie TV)
 function setMediaType(mediaType, button) {
     currentMediaType = mediaType;
@@ -596,7 +613,12 @@ function updateProviderButtonsUI() {
     document.getElementById('providerDisneyBtn')?.classList.toggle('active', selectedProviders.includes('disney'));
     document.getElementById('providerNetflixBtn')?.classList.toggle('active', selectedProviders.includes('netflix'));
     document.getElementById('providerPrimeBtn')?.classList.toggle('active', selectedProviders.includes('prime'));
-    document.getElementById('providerAppleBtn')?.classList.toggle('active', selectedProviders.includes('apple'));
+}
+
+function toggleFilterUnsaved(button) {
+    filterOnlyUnsaved = !filterOnlyUnsaved;
+    button?.classList.toggle('active', filterOnlyUnsaved);
+    displayCatalog(allMovies);
 }
 
 async function loadCatalog(page = 1) {
@@ -705,10 +727,42 @@ function renderMovieCard(item, options = {}) {
     const isPending = pendingSyncKeys.has(key);
     const mediaLabel = item.mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel');
 
-    let providerLabel = '';
-    if (item.provider && PROVIDERS[item.provider]) {
-        providerLabel = ` · ${PROVIDERS[item.provider].name}`;
+    // Trova tutti i provider associati a questo titolo
+    const providersSet = new Set();
+    if (item.provider && item.provider !== 'all') {
+        item.provider.split(/[-|]/).forEach(p => {
+            if (PROVIDERS[p]) providersSet.add(p);
+        });
     }
+    const partnerItem = userLists[otherUser]?.find(m => getMovieKey(m) === key);
+    if (partnerItem?.provider && partnerItem.provider !== 'all') {
+        partnerItem.provider.split(/[-|]/).forEach(p => {
+            if (PROVIDERS[p]) providersSet.add(p);
+        });
+    }
+    const myItem = userLists[currentUser]?.find(m => getMovieKey(m) === key);
+    if (myItem?.provider && myItem.provider !== 'all') {
+        myItem.provider.split(/[-|]/).forEach(p => {
+            if (PROVIDERS[p]) providersSet.add(p);
+        });
+    }
+    if (selectedProviders.length === 1 && PROVIDERS[selectedProviders[0]]) {
+        providersSet.add(selectedProviders[0]);
+    }
+    const cachedProviderData = apiCache.providers.get(`${item.mediaType}_${item.id}`);
+    if (cachedProviderData) {
+        const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+        const flatrate = cachedProviderData.results?.[regionCode]?.flatrate || [];
+        Object.keys(PROVIDERS).forEach(pKey => {
+            if (flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)) {
+                providersSet.add(pKey);
+            }
+        });
+    }
+
+    const platformBadgesHtml = providersSet.size > 0
+        ? `<div class="platform-badges">${[...providersSet].map(p => `<span class="platform-badge ${p}">${PROVIDERS[p]?.name || p}</span>`).join('')}</div>`
+        : '';
 
     let actionBtn;
     if (isPending) {
@@ -725,11 +779,14 @@ function renderMovieCard(item, options = {}) {
     }
 
     return `<div class="movie-card ${isPending ? 'card-pending' : ''}">
-        ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
-        ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
-        <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')" onerror="this.style.visibility='hidden'">
+        <div class="poster-container" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">
+            ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
+            ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
+            <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onerror="this.style.visibility='hidden'">
+            ${platformBadgesHtml}
+        </div>
         <div class="movie-title" title="${escapeHtml(item.title)}" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
-        <div class="movie-year">${item.year || 'N/A'}${providerLabel} · ${mediaLabel}</div>
+        <div class="movie-year">${item.year || 'N/A'} · ${mediaLabel}</div>
         ${item.rating ? `<div class="movie-rating">⭐ ${Number(item.rating).toFixed(1)}</div>` : ''}
         ${actionBtn}
     </div>`;
@@ -744,13 +801,28 @@ function escapeHtml(value) {
 function displayCatalog(items) {
     const grid = getCatalogGrid();
     if (!grid) return;
-    if (!items.length) {
-        grid.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+
+    let displayItems = items;
+    if (filterOnlyUnsaved) {
+        displayItems = displayItems.filter(item => {
+            const key = getMovieKey(item);
+            const inMyList = userLists[currentUser].some(m => getMovieKey(m) === key);
+            const isSeen = seenMovies.vincenzo.some(m => getMovieKey(m) === key)
+                || seenMovies.millena.some(m => getMovieKey(m) === key);
+            return !inMyList && !isSeen;
+        });
+    }
+
+    if (!displayItems.length) {
+        const msg = filterOnlyUnsaved && items.length > 0
+            ? t('allMoviesSaved')
+            : t('noMovies');
+        grid.innerHTML = `<div class="empty-state">${msg}</div>`;
         const pagination = getCatalogPagination();
-        if (pagination) pagination.innerHTML = '';
+        if (pagination && !items.length) pagination.innerHTML = '';
         return;
     }
-    grid.innerHTML = items.map(item => renderMovieCard(item, { showPartner: true, showSeen: true })).join('');
+    grid.innerHTML = displayItems.map(item => renderMovieCard(item, { showPartner: true, showSeen: true })).join('');
 }
 
 async function toggleMovie(id, mediaType = currentMediaType, provider = 'all') {
@@ -767,7 +839,7 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = 'all') {
     const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
     const isAdding = index === -1;
 
-    // Feedback immediato con stato "Salvataggio..." sul pulsante
+    // Feedback visivo immediato lasciando la card con bottone in stato "Salvataggio..."
     displayCatalog(allMovies);
     renderCurrentListSubTab();
     updateModalAddButton();
@@ -810,7 +882,10 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = 'all') {
 function updateMyList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    const items = userLists[currentUser];
+    let items = userLists[currentUser];
+    if (listSearchQuery) {
+        items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
+    }
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             showPartner: true,
@@ -818,7 +893,7 @@ function updateMyList() {
             isRemove: true,
             action: `<button class="add-btn remove-btn" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">🗑️ ${t('removeButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${t('emptyMyList')}</div>`;
+        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptyMyList')}</div>`;
 }
 
 function getSharedItems() {
@@ -833,26 +908,32 @@ function getSharedItems() {
 function updateSharedList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    const items = getSharedItems();
+    let items = getSharedItems();
+    if (listSearchQuery) {
+        items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
+    }
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             isSeenBtn: true,
             action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">✓ ${t('seenButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${t('emptyShared')}</div>`;
+        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptyShared')}</div>`;
 }
 
 function updateSeenList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    const items = seenMovies.vincenzo.filter(item =>
+    let items = seenMovies.vincenzo.filter(item =>
         seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
+    if (listSearchQuery) {
+        items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
+    }
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             isNotSeenBtn: true,
             action: `<button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${t('emptySeen')}</div>`;
+        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptySeen')}</div>`;
 }
 
 async function toggleSeen(id, seen, mediaType = 'movie', provider = 'all') {
@@ -1049,6 +1130,7 @@ async function saveSyncLink() {
 
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('searchBox')?.addEventListener('input', handleSearch);
+    document.getElementById('listSearchBox')?.addEventListener('input', handleListSearch);
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             closeModal();
