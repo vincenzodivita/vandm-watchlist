@@ -37,6 +37,7 @@
         <div class="tabs">
             <button id="mainTabCatalogBtn" class="tab-btn active" onclick="switchMainTab('catalog', this)">🎬 Catalogo</button>
             <button id="mainTabListBtn" class="tab-btn" onclick="switchMainTab('list', this)">📋 Lista</button>
+            <button id="mainTabCalendarBtn" class="tab-btn" onclick="switchMainTab('calendar', this)">📅 Calendario</button>
         </div>
 
         <div class="content">
@@ -92,7 +93,6 @@
                             <button id="listTypeMyListBtn" class="filter-btn active" onclick="switchListSubTab('mylist', this)">La Mia Lista</button>
                             <button id="listTypeSharedBtn" class="filter-btn" onclick="switchListSubTab('shared', this)">Da Vedere Insieme ❤️</button>
                             <button id="listTypeSeenBtn" class="filter-btn" onclick="switchListSubTab('seen', this)">Già Visti ✓</button>
-                            <button id="listTypeCalendarBtn" class="filter-btn" onclick="switchListSubTab('calendar', this)">📅 Calendario</button>
                         </div>
                     </div>
 
@@ -115,6 +115,11 @@
                     <h3 id="listSectionTitle">La Mia Lista</h3>
                     <div id="listContent"></div>
                 </div>
+            </div>
+
+            <!-- Calendar Tab -->
+            <div id="calendarTab" class="tab-content" style="display: none;">
+                <div id="calendarContent"></div>
             </div>
         </div>
 </div>
@@ -169,22 +174,31 @@
     </div>
 </div>
 
-<!-- Modal for setting/changing seen date -->
+<!-- Modal for viewing dates & rewatches -->
 <div id="datePickerModal" class="modal" onclick="closeDatePickerModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 420px;">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 480px;">
         <div class="sync-modal-body">
             <button class="modal-close" onclick="closeDatePickerModal()">&times;</button>
-            <h2 class="modal-title" id="datePickerModalTitle">📅 Data di Visione</h2>
-            <p id="datePickerModalDesc" style="margin-bottom: 15px; opacity: 0.85;">
-                Quando hai visto questo film?
+            <h2 class="modal-title" id="datePickerModalTitle">🔁 Date di Visione & Rewatch</h2>
+            <p id="datePickerModalDesc" style="margin-bottom: 14px; opacity: 0.85; font-size: 0.95em;">
+                Gestisci le visualizzazioni di questo titolo
             </p>
-            <input type="date" id="seenDateInput" class="sync-input" style="font-size: 1.1em; padding: 10px; text-align: center; color-scheme: dark;">
-            <div class="sync-modal-buttons" style="margin-top: 15px;">
-                <button class="modal-button primary" onclick="confirmSaveSeenDate()">
-                    💾 Salva Data
-                </button>
-                <button class="modal-button secondary" onclick="closeDatePickerModal()">
-                    Annulla
+
+            <div id="datePickerList" class="rewatch-dates-list"></div>
+
+            <div class="add-rewatch-box">
+                <span id="labelAddRewatch" class="add-rewatch-title">+ Aggiungi visione / Rewatch:</span>
+                <div class="add-rewatch-row">
+                    <input type="date" id="newSeenDateInput" class="sync-input rewatch-input" style="color-scheme: dark;">
+                    <button class="modal-button primary rewatch-add-btn" onclick="addNewRewatchDate()">
+                        + Aggiungi
+                    </button>
+                </div>
+            </div>
+
+            <div class="sync-modal-buttons" style="margin-top: 18px;">
+                <button class="modal-button secondary" onclick="closeDatePickerModal()" style="width: 100%;">
+                    Chiudi
                 </button>
             </div>
         </div>

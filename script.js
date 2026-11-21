@@ -72,6 +72,7 @@ const translations = {
         logout: 'Esci',
         tabCatalog: '🎬 Catalogo',
         tabList: '📋 Lista',
+        tabCalendar: '📅 Calendario',
         subTabMyList: 'La Mia Lista',
         subTabShared: 'Da Vedere Insieme ❤️',
         subTabSeen: 'Già Visti ✓',
@@ -127,7 +128,6 @@ const translations = {
         saving: 'Salvataggio...',
         syncingSheets: 'Sincronizzazione in corso...',
         syncedSheets: 'Sincronizzato con successo!',
-        subTabCalendar: '📅 Calendario',
         calendarTitle: 'Calendario Visualizzazioni',
         calendarFilterAll: 'Tutti i visti',
         calendarFilterShared: 'Visti insieme ❤️',
@@ -135,19 +135,24 @@ const translations = {
         moviesSeenOn: 'Film visti il',
         calendarEmpty: 'Nessun film visto in questa data.',
         calendarNoDate: 'Film già visti senza data',
-        calendarUndatedHint: 'Clicca per espandere e assegnare una data ai film visti in passato.',
+        calendarUndatedHint: 'Clicca per espandere e gestire le date dei film visti in passato.',
         calendarAssignDate: 'Assegna data',
-        calendarChangeDate: 'Cambia data',
-        datePickerTitle: '📅 Data di Visione',
-        datePickerDesc: 'Seleziona il giorno in cui hai visto',
-        saveDate: '💾 Salva Data',
-        dateSavedToast: 'Data di visione aggiornata!'
+        calendarManageDates: 'Gestisci date',
+        datePickerTitle: '🔁 Date di Visione & Rewatch',
+        datePickerDesc: 'Gestisci le visualizzazioni di',
+        firstWatch: '1ª visione',
+        rewatchNumber: 'ª visione (Rewatch)',
+        rewatchBadge: '🔁 Rewatch',
+        rewatchCount: 'visioni',
+        dateAddedToast: 'Nuova data di visione aggiunta!',
+        dateRemovedToast: 'Data di visione rimossa!'
     },
     millena: {
         welcome: 'Olá Millena! 🇧🇷',
         logout: 'Sair',
         tabCatalog: '🎬 Catálogo',
         tabList: '📋 Lista',
+        tabCalendar: '📅 Calendário',
         subTabMyList: 'Minha Lista',
         subTabShared: 'Para Assistir Juntos ❤️',
         subTabSeen: 'Já Assistidos ✓',
@@ -203,7 +208,6 @@ const translations = {
         saving: 'Salvando...',
         syncingSheets: 'Sincronizando com o Sheets...',
         syncedSheets: 'Sincronizado com sucesso!',
-        subTabCalendar: '📅 Calendário',
         calendarTitle: 'Calendário de Visualizações',
         calendarFilterAll: 'Todos os assistidos',
         calendarFilterShared: 'Assistidos juntos ❤️',
@@ -211,13 +215,17 @@ const translations = {
         moviesSeenOn: 'Filmes assistidos em',
         calendarEmpty: 'Nenhum filme assistido nesta data.',
         calendarNoDate: 'Filmes já assistidos sem data',
-        calendarUndatedHint: 'Clique para expandir e definir a data dos filmes assistidos no passado.',
+        calendarUndatedHint: 'Clique para expandir e gerenciar as datas dos filmes assistidos no passado.',
         calendarAssignDate: 'Definir data',
-        calendarChangeDate: 'Mudar data',
-        datePickerTitle: '📅 Data em que assistiu',
-        datePickerDesc: 'Selecione o dia em que assistiu a',
-        saveDate: '💾 Salvar Data',
-        dateSavedToast: 'Data de visualização atualizada!'
+        calendarManageDates: 'Gerenciar datas',
+        datePickerTitle: '🔁 Datas em que assistiu & Rewatch',
+        datePickerDesc: 'Gerenciar as visualizações de',
+        firstWatch: '1ª visualização',
+        rewatchNumber: 'ª visualização (Rewatch)',
+        rewatchBadge: '🔁 Rewatch',
+        rewatchCount: 'visualizações',
+        dateAddedToast: 'Nova data de visualização adicionada!',
+        dateRemovedToast: 'Data de visualização removida!'
     }
 };
 
@@ -545,6 +553,18 @@ function saveCachedSheetsData() {
     }
 }
 
+function getMovieSeenDates(itemOrKey) {
+    if (!itemOrKey) return [];
+    const key = typeof itemOrKey === 'string' ? itemOrKey : getMovieKey(itemOrKey);
+    const val = seenDates[key];
+    if (!val) return [];
+    if (Array.isArray(val)) return [...val].sort();
+    if (typeof val === 'string') {
+        return val.split(/[,|]/).map(d => d.trim()).filter(Boolean).sort();
+    }
+    return [];
+}
+
 // Google Sheets
 async function loadFromSheets() {
     try {
@@ -556,6 +576,16 @@ async function loadFromSheets() {
         (data.movies || []).forEach(row => {
             if (!['vincenzo', 'millena'].includes(row.user)) return;
             const itemKey = getMovieKey({ id: Number(row.movieId), mediaType: row.mediaType || 'movie' });
+            let rowDates = [];
+            if (row.seenDate) {
+                rowDates = String(row.seenDate).split(/[,|]/).map(d => d.trim()).filter(Boolean);
+            }
+            const existingDates = getMovieSeenDates(itemKey);
+            const mergedDates = Array.from(new Set([...existingDates, ...rowDates])).sort();
+            if (mergedDates.length > 0) {
+                seenDates[itemKey] = mergedDates;
+            }
+
             const item = {
                 id: Number(row.movieId),
                 title: row.title,
@@ -564,11 +594,8 @@ async function loadFromSheets() {
                 provider: row.provider || 'all',
                 mediaType: row.mediaType || 'movie',
                 genre_ids: Array.isArray(row.genre_ids) ? row.genre_ids : [],
-                seenDate: row.seenDate || seenDates[itemKey] || null
+                seenDates: mergedDates
             };
-            if (item.seenDate) {
-                seenDates[itemKey] = item.seenDate;
-            }
             userLists[row.user].push(item);
             if (row.seen === true || row.seen === 'TRUE') seenMovies[row.user].push(item);
         });
@@ -651,9 +678,10 @@ function removeFromSheets(user, item) {
     }, t('errorRemove'));
 }
 
-function markAsSeenInSheets(item, seen, customDate) {
+function markAsSeenInSheets(item, seen, customDatesArray) {
     saveCachedSheetsData();
-    const dateToSend = customDate || seenDates[getMovieKey(item)] || (seen ? new Date().toISOString().split('T')[0] : '');
+    const dates = customDatesArray || getMovieSeenDates(item);
+    const dateToSend = seen ? dates.join(', ') : '';
     return postToSheets({
         action: 'markSeen', movieId: item.id, seen, seenDate: dateToSend,
         provider: item.provider || 'all', mediaType: item.mediaType || 'movie'
@@ -716,6 +744,8 @@ function updateUILanguage() {
     document.querySelector('.logout-btn').textContent = t('logout');
     document.getElementById('mainTabCatalogBtn').textContent = t('tabCatalog');
     document.getElementById('mainTabListBtn').textContent = t('tabList');
+    const mainCalBtn = document.getElementById('mainTabCalendarBtn');
+    if (mainCalBtn) mainCalBtn.textContent = t('tabCalendar');
     document.getElementById('searchBox').placeholder = t('searchPlaceholder');
     document.getElementById('labelMediaType').textContent = t('filterType');
     document.getElementById('labelPlatforms').textContent = t('filterPlatforms');
@@ -732,8 +762,6 @@ function updateUILanguage() {
     document.getElementById('listTypeMyListBtn').textContent = t('subTabMyList');
     document.getElementById('listTypeSharedBtn').textContent = t('subTabShared');
     document.getElementById('listTypeSeenBtn').textContent = t('subTabSeen');
-    const calBtn = document.getElementById('listTypeCalendarBtn');
-    if (calBtn) calBtn.textContent = t('subTabCalendar');
     document.getElementById('labelListMediaType').textContent = t('filterType');
     document.getElementById('labelListGenres').textContent = t('filterGenres');
     document.getElementById('listTypeAllBtn').textContent = t('typeAll');
@@ -828,6 +856,10 @@ function switchMainTab(tab, button) {
     } else if (tab === 'list') {
         document.getElementById('listTab').style.display = 'block';
         renderCurrentListSubTab();
+    } else if (tab === 'calendar') {
+        const calTab = document.getElementById('calendarTab');
+        if (calTab) calTab.style.display = 'block';
+        renderCalendarView();
     }
 }
 
@@ -850,9 +882,6 @@ function renderCurrentListSubTab() {
     } else if (currentListSubTab === 'seen') {
         if (titleEl) titleEl.textContent = t('seenTitle');
         updateSeenList();
-    } else if (currentListSubTab === 'calendar') {
-        if (titleEl) titleEl.textContent = t('calendarTitle');
-        renderCalendarView();
     }
 }
 
@@ -1068,10 +1097,18 @@ function renderMovieCard(item, options = {}) {
         actionBtn = `<button class="add-btn ${inMyList ? 'added' : ''}" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">${inMyList ? t('addedButton') : t('addButton')}</button>`;
     }
 
+    const movieDates = getMovieSeenDates(item);
+    const rewatchBadgeHtml = options.rewatchBadgeText
+        ? `<div class="rewatch-card-badge">${options.rewatchBadgeText}</div>`
+        : (options.showSeen && isSeen && movieDates.length > 1
+            ? `<div class="rewatch-card-badge">🔁 x${movieDates.length}</div>`
+            : '');
+
     return `<div class="movie-card ${isPending ? 'card-pending' : ''}">
         <div class="poster-container" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">
             ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
             ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
+            ${rewatchBadgeHtml}
             <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onerror="this.style.visibility='hidden'">
             ${platformBadgesHtml}
         </div>
@@ -1242,13 +1279,19 @@ function updateSeenList() {
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => {
             const key = getMovieKey(item);
-            const date = item.seenDate || seenDates[key];
-            const dateLabel = date ? `📅 ${date.split('-').reverse().join('/')}` : `📅 ${t('calendarAssignDate')}`;
+            const dates = getMovieSeenDates(item);
+            let dateLabel = `📅 ${t('calendarAssignDate')}`;
+            if (dates.length === 1) {
+                dateLabel = `📅 ${dates[0].split('-').reverse().join('/')}`;
+            } else if (dates.length > 1) {
+                dateLabel = `🔁 ${dates.length} ${t('rewatchCount')}`;
+            }
             return renderMovieCard(item, {
                 isNotSeenBtn: true,
+                showSeen: true,
                 action: `
                     <button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>
-                    <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${key}', '${date || new Date().toISOString().split('T')[0]}')">${dateLabel}</button>
+                    <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${key}')">${dateLabel}</button>
                 `
             });
         }).join('')}</div>`
@@ -1265,18 +1308,22 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'all') {
     pendingSyncKeys.add(key);
 
     renderCurrentListSubTab();
+    if (currentMainTab === 'calendar') renderCalendarView();
     showToast(t('syncingSheets'), 'syncing', '🔄', 0);
 
     try {
         const ok = await markAsSeenInSheets(item, seen);
         if (ok) {
             const todayStr = new Date().toISOString().split('T')[0];
+            const currentDates = getMovieSeenDates(key);
             if (seen) {
-                if (!seenDates[key]) seenDates[key] = todayStr;
-                item.seenDate = seenDates[key];
+                if (!currentDates.includes(todayStr)) {
+                    currentDates.push(todayStr);
+                    currentDates.sort();
+                    seenDates[key] = currentDates;
+                }
             } else {
                 delete seenDates[key];
-                delete item.seenDate;
             }
             for (const user of ['vincenzo', 'millena']) {
                 seenMovies[user] = seen
@@ -1478,10 +1525,20 @@ async function saveSyncLink() {
 }
 
 // ==========================================
-// Viewing Calendar Functions
+// Viewing Calendar & Rewatch Functions
 // ==========================================
+function formatDisplayDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+        const [y, m, d] = dateStr.split('-');
+        return `${parseInt(d, 10)}/${parseInt(m, 10)}/${y}`;
+    } catch (e) {
+        return dateStr;
+    }
+}
+
 function renderCalendarView() {
-    const target = document.getElementById('listContent');
+    const target = document.getElementById('calendarContent') || document.getElementById('listContent');
     if (!target) return;
 
     const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
@@ -1497,11 +1554,16 @@ function renderCalendarView() {
     const undatedMovies = [];
 
     filteredSeenList.forEach(item => {
-        const key = getMovieKey(item);
-        const date = item.seenDate || seenDates[key];
-        if (date) {
-            if (!moviesByDate.has(date)) moviesByDate.set(date, []);
-            moviesByDate.get(date).push(item);
+        const dates = getMovieSeenDates(item);
+        if (dates.length > 0) {
+            dates.forEach((d, idx) => {
+                if (!moviesByDate.has(d)) moviesByDate.set(d, []);
+                moviesByDate.get(d).push({
+                    item,
+                    watchIndex: idx,
+                    totalWatches: dates.length
+                });
+            });
         } else {
             undatedMovies.push(item);
         }
@@ -1545,12 +1607,12 @@ function renderCalendarView() {
         daysHtml += `
             <div class="${classes}" onclick="selectCalendarDate('${dateStr}')">
                 <span class="day-number">${day}</span>
-                ${hasMovies ? `<span class="day-badge" title="${count} ${count === 1 ? 'film visto' : 'film visti'}">🎬 ${count}</span>` : ''}
+                ${hasMovies ? `<span class="day-badge" title="${count} ${count === 1 ? 'visione' : 'visioni'}">🎬 ${count}</span>` : ''}
             </div>
         `;
     }
 
-    const selectedMovies = moviesByDate.get(selectedCalendarDate) || [];
+    const selectedEntries = moviesByDate.get(selectedCalendarDate) || [];
     let formattedSelectedDate = selectedCalendarDate;
     try {
         const [sy, sm, sd] = selectedCalendarDate.split('-');
@@ -1561,19 +1623,25 @@ function renderCalendarView() {
     const selectedDetailsHtml = `
         <div class="calendar-selected-section">
             <div class="calendar-selected-header">
-                <h4>🎬 ${t('moviesSeenOn')} ${formattedSelectedDate} ${selectedMovies.length > 0 ? `(${selectedMovies.length})` : ''}</h4>
-                ${selectedMovies.length === 0 ? `<p class="calendar-empty-hint">${t('calendarEmpty')}</p>` : ''}
+                <h4>🎬 ${t('moviesSeenOn')} ${formattedSelectedDate} ${selectedEntries.length > 0 ? `(${selectedEntries.length})` : ''}</h4>
+                ${selectedEntries.length === 0 ? `<p class="calendar-empty-hint">${t('calendarEmpty')}</p>` : ''}
             </div>
-            ${selectedMovies.length > 0 ? `
+            ${selectedEntries.length > 0 ? `
                 <div class="movies-grid">
-                    ${selectedMovies.map(item => renderMovieCard(item, {
-                        showPartner: true,
-                        isNotSeenBtn: true,
-                        action: `
-                            <button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>
-                            <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${getMovieKey(item)}', '${selectedCalendarDate}')">📅 ${t('calendarChangeDate')}</button>
-                        `
-                    })).join('')}
+                    ${selectedEntries.map(entry => {
+                        const badgeText = entry.totalWatches > 1
+                            ? (entry.watchIndex === 0 ? t('firstWatch') : `${entry.watchIndex + 1}${t('rewatchNumber')}`)
+                            : '';
+                        return renderMovieCard(entry.item, {
+                            showPartner: true,
+                            isNotSeenBtn: true,
+                            rewatchBadgeText: badgeText,
+                            action: `
+                                <button class="add-btn not-seen-btn" onclick="toggleSeen(${entry.item.id}, false, '${entry.item.mediaType}', '${entry.item.provider}')">↺ ${t('notSeenButton')}</button>
+                                <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${getMovieKey(entry.item)}')">📅 ${t('calendarManageDates')} (${entry.totalWatches})</button>
+                            `
+                        });
+                    }).join('')}
                 </div>
             ` : ''}
         </div>
@@ -1591,7 +1659,7 @@ function renderCalendarView() {
                     isNotSeenBtn: true,
                     action: `
                         <button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>
-                        <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${getMovieKey(item)}', '${todayStr}')">📅 ${t('calendarAssignDate')}</button>
+                        <button class="filter-btn cal-edit-date-btn" onclick="openDatePickerModal('${getMovieKey(item)}')">📅 ${t('calendarAssignDate')}</button>
                     `
                 })).join('')}
             </div>
@@ -1672,19 +1740,46 @@ function toggleUndatedSection() {
     if (arrow) arrow.textContent = isHidden ? '▲' : '▼';
 }
 
-function openDatePickerModal(movieKey, defaultDate) {
+function renderDatePickerList() {
+    const container = document.getElementById('datePickerList');
+    if (!container || !activeDatePickerMovieKey) return;
+    const dates = getMovieSeenDates(activeDatePickerMovieKey);
+    if (!dates.length) {
+        container.innerHTML = `<div class="calendar-empty-hint" style="text-align: center; padding: 12px 0;">${t('calendarNoDate')}</div>`;
+        return;
+    }
+    container.innerHTML = dates.map((d, idx) => {
+        const badgeLabel = idx === 0 ? t('firstWatch') : `${idx + 1}${t('rewatchNumber')}`;
+        return `
+            <div class="rewatch-date-item">
+                <div class="rewatch-date-info">
+                    <span class="rewatch-badge ${idx === 0 ? 'first' : ''}">${badgeLabel}</span>
+                    <span class="rewatch-date-text">📅 ${formatDisplayDate(d)}</span>
+                </div>
+                <button class="rewatch-del-btn" onclick="removeSeenDate('${d}')" title="${t('removeDate')}">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function openDatePickerModal(movieKey) {
     activeDatePickerMovieKey = movieKey;
-    const input = document.getElementById('seenDateInput');
     const descEl = document.getElementById('datePickerModalDesc');
+    const input = document.getElementById('newSeenDateInput');
     const item = seenMovies.vincenzo.find(m => getMovieKey(m) === movieKey)
-        || seenMovies.millena.find(m => getMovieKey(m) === movieKey);
+        || seenMovies.millena.find(m => getMovieKey(m) === movieKey)
+        || userLists.vincenzo.find(m => getMovieKey(m) === movieKey)
+        || userLists.millena.find(m => getMovieKey(m) === movieKey);
 
     if (input) {
-        input.value = defaultDate || new Date().toISOString().split('T')[0];
+        input.value = new Date().toISOString().split('T')[0];
     }
     if (descEl && item) {
-        descEl.textContent = `${t('datePickerDesc')} "${item.title}"?`;
+        descEl.textContent = `${t('datePickerDesc')} "${item.title}"`;
     }
+
+    renderDatePickerList();
+
     const modal = document.getElementById('datePickerModal');
     if (modal) modal.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -1700,42 +1795,67 @@ function closeDatePickerModal(event) {
     activeDatePickerMovieKey = null;
 }
 
-async function confirmSaveSeenDate() {
-    const input = document.getElementById('seenDateInput');
+async function addNewRewatchDate() {
+    const input = document.getElementById('newSeenDateInput');
     const newDate = input?.value;
     if (!newDate || !activeDatePickerMovieKey) return;
 
     const movieKey = activeDatePickerMovieKey;
-    seenDates[movieKey] = newDate;
+    const currentDates = getMovieSeenDates(movieKey);
+    if (!currentDates.includes(newDate)) {
+        currentDates.push(newDate);
+        currentDates.sort();
+        seenDates[movieKey] = currentDates;
+    }
 
-    // Aggiorna l'oggetto in memoria
-    for (const user of ['vincenzo', 'millena']) {
-        const found = seenMovies[user].find(m => getMovieKey(m) === movieKey);
-        if (found) found.seenDate = newDate;
-        const inUserList = userLists[user].find(m => getMovieKey(m) === movieKey);
-        if (inUserList) inUserList.seenDate = newDate;
+    // Assicura che sia presente in seenMovies
+    const targetItem = seenMovies[currentUser].find(m => getMovieKey(m) === movieKey)
+        || userLists[currentUser].find(m => getMovieKey(m) === movieKey);
+    if (targetItem && !seenMovies[currentUser].some(m => getMovieKey(m) === movieKey)) {
+        seenMovies[currentUser].push(targetItem);
     }
 
     saveCachedSheetsData();
 
-    // Sincronizza su Sheets
-    const targetItem = seenMovies[currentUser].find(m => getMovieKey(m) === movieKey)
-        || userLists[currentUser].find(m => getMovieKey(m) === movieKey);
     if (targetItem) {
-        markAsSeenInSheets(targetItem, true, newDate);
+        markAsSeenInSheets(targetItem, true, currentDates);
     }
 
-    // Se la nuova data appartiene a un altro mese/anno, spostiamo il calendario lì
+    // Sposta la vista del calendario sulla data appena aggiunta
     const [ny, nm] = newDate.split('-');
     if (ny && nm) {
         currentCalendarYear = parseInt(ny, 10);
         currentCalendarMonth = parseInt(nm, 10) - 1;
+        selectedCalendarDate = newDate;
     }
-    selectedCalendarDate = newDate;
 
-    closeDatePickerModal();
-    showToast(t('dateSavedToast'), 'success', '📅', 2500);
-    renderCurrentListSubTab();
+    renderDatePickerList();
+    showToast(t('dateAddedToast'), 'success', '🔁', 2200);
+
+    if (currentMainTab === 'calendar') renderCalendarView();
+    if (currentMainTab === 'list') renderCurrentListSubTab();
+}
+
+async function removeSeenDate(dateToRemove) {
+    if (!activeDatePickerMovieKey) return;
+    const movieKey = activeDatePickerMovieKey;
+    let currentDates = getMovieSeenDates(movieKey);
+    currentDates = currentDates.filter(d => d !== dateToRemove);
+    seenDates[movieKey] = currentDates;
+
+    saveCachedSheetsData();
+
+    const targetItem = seenMovies[currentUser].find(m => getMovieKey(m) === movieKey)
+        || userLists[currentUser].find(m => getMovieKey(m) === movieKey);
+    if (targetItem) {
+        markAsSeenInSheets(targetItem, currentDates.length > 0, currentDates);
+    }
+
+    renderDatePickerList();
+    showToast(t('dateRemovedToast'), 'success', '🗑️', 2000);
+
+    if (currentMainTab === 'calendar') renderCalendarView();
+    if (currentMainTab === 'list') renderCurrentListSubTab();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
