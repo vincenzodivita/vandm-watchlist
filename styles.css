@@ -297,6 +297,8 @@
         text-align: center;
         padding: 40px;
         color: rgba(255, 255, 255, 0.7);
+        grid-column: 1 / -1;
+        width: 100%;
     }
 
     .search-box {
