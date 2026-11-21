@@ -46,11 +46,14 @@
 <!-- Catalog Tab -->
 <div id="catalogTab" class="tab-content">
 <input type="text" id="searchBox" class="search-box" placeholder="Cerca su Disney+...">
-<div id="mediaTypeControls" class="media-type-controls" style="display: none;">
+<div id="mediaTypeControls" class="media-type-controls">
 <button id="movieTypeMovies" class="media-type-btn active" onclick="setMediaType('movie', this)">Film</button>
 <button id="movieTypeTv" class="media-type-btn" onclick="setMediaType('tv', this)">Serie TV</button>
 </div>
-<div id="catalogContent" class="loading">Caricamento catalogo...</div>
+<div id="catalogContent">
+<div id="catalogGrid" class="movies-grid"></div>
+<div id="catalogPagination" class="pagination"></div>
+</div>
 </div>
 
 <!-- My List Tab -->

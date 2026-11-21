@@ -228,19 +228,38 @@
         opacity: 0.8;
     }
 
+    .add-btn.remove-btn {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+
+    .add-btn.remove-btn:hover {
+        background: linear-gradient(135deg, #dc2626, #b91c1c);
+        opacity: 1;
+    }
+
+    .add-btn.not-seen-btn {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+
+    .add-btn.not-seen-btn:hover {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        opacity: 1;
+    }
+
     .partner-badge {
         position: absolute;
         top: 10px;
         right: 10px;
-        background: #ec4899;
+        background: #3b82f6;
         padding: 5px 10px;
         border-radius: 5px;
         font-size: 0.75em;
         font-weight: bold;
+        z-index: 2;
     }
 
     .vincenzo-color .partner-badge {
-        background: #3b82f6;
+        background: #ec4899;
     }
 
     .shared-badge {
@@ -489,6 +508,24 @@
             flex-direction: column;
         }
         
+        .header {
+            flex-direction: column;
+            gap: 15px;
+            text-align: center;
+        }
+
+        .header-buttons {
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .header-buttons button,
+        .header-buttons a {
+            font-size: 13px;
+            padding: 8px 12px;
+        }
+
         .tabs {
             overflow-x: auto;
         }

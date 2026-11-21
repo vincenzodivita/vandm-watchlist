@@ -20,113 +20,123 @@ let currentModalMovie = null;
 let syncWatchLink = '';
 let searchTimeout = null;
 
-    const translations = {
-        vincenzo: {
-            welcome: 'Ciao Vincenzo! 🇮🇹',
-            logout: 'Esci',
-            tabCatalog: 'Catalogo Disney+',
-            tabNetflix: 'Catalogo Netflix',
-            moviesLabel: 'Film',
-            seriesLabel: 'Serie TV',
-            providerNetflix: 'Netflix',
-            providerDisney: 'Disney+',
-            tabMyList: 'La Mia Lista',
-            tabShared: 'Da Vedere Insieme ❤️',
-            tabSeen: 'Già Visti ✓',
-            searchPlaceholder: 'Cerca su Disney+ Italia...',
-            loading: 'Caricamento catalogo...',
-            noMovies: 'Nessun film trovato',
-            addButton: '+ Aggiungi',
-            addedButton: '✓ Nella mia lista',
-            removeButton: '✓ Rimuovi',
-            seenButton: '✓ Già visto',
-            notSeenButton: '↺ Da vedere',
-            partnerBadge: '❤️ Millena',
-            sharedBadge: '💕 Insieme',
-            seenBadge: '✓ Visto',
-            sharedTitle: 'Film che volete vedere insieme 💕',
-            seenTitle: 'Film che avete già visto insieme ✓',
-            emptyMyList: 'La tua lista è vuota. Aggiungi film dal catalogo!',
-            emptyShared: 'Nessun film in comune ancora. Aggiungete i vostri film preferiti! 💑',
-            emptySeen: 'Non avete ancora visto nessun film insieme. Guardate qualcosa e segnate come visto! 🎬',
-            errorLoad: 'Errore nel caricamento dei dati da Google Sheets',
-            errorSave: 'Errore nel salvataggio su Google Sheets',
-            errorRemove: 'Errore nella rimozione da Google Sheets',
-            close: 'Chiudi',
-            previous: 'Precedente',
-            next: 'Successiva',
-            page: 'Pagina',
-            of: 'di',
-            syncWatch: '🔗 Watch Together',
-            editSync: '✏️',
-            syncModalTitle: 'Modifica Link Sincronizzazione',
-            syncModalDescription: 'Inserisci il link generato dall\'estensione di sincronizzazione (es. Teleparty, Syncwatch)',
-            syncPlaceholder: 'https://...',
-            save: '💾 Salva',
-            cancel: 'Annulla',
-            syncSaved: 'Link salvato con successo!',
-            syncError: 'Errore nel salvataggio del link',
-            noSyncLink: 'Nessun link di sincronizzazione configurato. Clicca sul pulsante ✏️ per aggiungerne uno.'    },
-        millena: {
-            welcome: 'Olá Millena! 🇧🇷',
-            logout: 'Sair',
-            tabCatalog: 'Catálogo Disney+',
-            tabNetflix: 'Catálogo Netflix',
-            moviesLabel: 'Filmes',
-            seriesLabel: 'Séries',
-            providerNetflix: 'Netflix',
-            providerDisney: 'Disney+',
-            tabMyList: 'Minha Lista',
-            tabShared: 'Para Assistir Juntos ❤️',
-            tabSeen: 'Já Assistidos ✓',
-            searchPlaceholder: 'Buscar no Disney+ Brasil...',
-            loading: 'Carregando catálogo...',
-            noMovies: 'Nenhum filme encontrado',
-            addButton: '+ Adicionar',
-            addedButton: '✓ Na minha lista',
-            removeButton: '✓ Remover',
-            seenButton: '✓ Já assistido',
-            notSeenButton: '↺ Para assistir',
-            partnerBadge: '❤️ Vincenzo',
-            sharedBadge: '💕 Juntos',
-            seenBadge: '✓ Assistido',
-            sharedTitle: 'Filmes que vocês querem assistir juntos 💕',
-            seenTitle: 'Filmes que vocês já assistiram juntos ✓',
-            emptyMyList: 'Sua lista está vazia. Adicione filmes do catálogo!',
-            emptyShared: 'Nenhum filme em comum ainda. Adicionem seus filmes favoritos! 💑',
-            emptySeen: 'Vocês ainda não assistiram nenhum filme juntos. Assistam algo e marquem como visto! 🎬',
-            errorLoad: 'Erro ao carregar dados do Google Sheets',
-            errorSave: 'Erro ao salvar no Google Sheets',
-            errorRemove: 'Erro ao remover do Google Sheets',
-            close: 'Fechar',
-            previous: 'Anterior',
-            next: 'Próxima',
-            page: 'Página',
-            of: 'de',
-            syncWatch: '🔗 Watch Together',
-            editSync: '✏️',
-            syncModalTitle: 'Editar Link de Sincronização',
-            syncModalDescription: 'Insira o link gerado pela extensão de sincronização (ex. Teleparty, Syncwatch)',
-            syncPlaceholder: 'https://...',
-            save: '💾 Salvar',
-            cancel: 'Cancelar',
-            syncSaved: 'Link salvo com sucesso!',
-            syncError: 'Erro ao salvar o link',
-            noSyncLink: 'Nenhum link de sincronização configurado. Clique no botão ✏️ para adicionar um.'
-
-        }
-    };
+const translations = {
+    vincenzo: {
+        welcome: 'Ciao Vincenzo! 🇮🇹',
+        logout: 'Esci',
+        tabCatalog: 'Catalogo Disney+',
+        tabNetflix: 'Catalogo Netflix',
+        moviesLabel: 'Film',
+        seriesLabel: 'Serie TV',
+        providerNetflix: 'Netflix',
+        providerDisney: 'Disney+',
+        tabMyList: 'La Mia Lista',
+        tabShared: 'Da Vedere Insieme ❤️',
+        tabSeen: 'Già Visti ✓',
+        searchPlaceholderDisney: 'Cerca su Disney+ Italia...',
+        searchPlaceholderNetflix: 'Cerca su Netflix Italia...',
+        loading: 'Caricamento catalogo...',
+        noMovies: 'Nessun titolo trovato',
+        addButton: '+ Aggiungi',
+        addedButton: '✓ Nella mia lista',
+        removeButton: 'Rimuovi',
+        seenButton: 'Già visto',
+        notSeenButton: 'Da vedere',
+        partnerBadge: '❤️ Millena',
+        sharedBadge: '💕 Insieme',
+        seenBadge: '✓ Visto',
+        sharedTitle: 'Film che volete vedere insieme 💕',
+        seenTitle: 'Film che avete già visto insieme ✓',
+        emptyMyList: 'La tua lista è vuota. Aggiungi film o serie dal catalogo!',
+        emptyShared: 'Nessun film in comune ancora. Aggiungete i vostri preferiti! 💑',
+        emptySeen: 'Non avete ancora visto nessun film insieme. Guardate qualcosa e segnate come visto! 🎬',
+        errorLoad: 'Errore nel caricamento dei dati da Google Sheets',
+        errorSave: 'Errore nel salvataggio su Google Sheets',
+        errorRemove: 'Errore nella rimozione da Google Sheets',
+        close: 'Chiudi',
+        previous: 'Precedente',
+        next: 'Successiva',
+        page: 'Pagina',
+        of: 'di',
+        syncWatch: '🔗 Watch Together',
+        editSync: '✏️',
+        syncModalTitle: 'Modifica Link Sincronizzazione',
+        syncModalDescription: 'Inserisci il link generato dall\'estensione di sincronizzazione (es. Teleparty, Syncwatch)',
+        syncPlaceholder: 'https://...',
+        save: '💾 Salva',
+        cancel: 'Annulla',
+        syncSaved: 'Link salvato con successo!',
+        syncError: 'Errore nel salvataggio del link',
+        noSyncLink: 'Nessun link di sincronizzazione configurato. Clicca sul pulsante ✏️ per aggiungerne uno.',
+        noOverview: 'Nessuna descrizione disponibile.',
+        noTitle: 'Titolo non disponibile'
+    },
+    millena: {
+        welcome: 'Olá Millena! 🇧🇷',
+        logout: 'Sair',
+        tabCatalog: 'Catálogo Disney+',
+        tabNetflix: 'Catálogo Netflix',
+        moviesLabel: 'Filmes',
+        seriesLabel: 'Séries',
+        providerNetflix: 'Netflix',
+        providerDisney: 'Disney+',
+        tabMyList: 'Minha Lista',
+        tabShared: 'Para Assistir Juntos ❤️',
+        tabSeen: 'Já Assistidos ✓',
+        searchPlaceholderDisney: 'Buscar no Disney+ Brasil...',
+        searchPlaceholderNetflix: 'Buscar na Netflix Brasil...',
+        loading: 'Carregando catálogo...',
+        noMovies: 'Nenhum título encontrado',
+        addButton: '+ Adicionar',
+        addedButton: '✓ Na minha lista',
+        removeButton: 'Remover',
+        seenButton: 'Já assistido',
+        notSeenButton: 'Para assistir',
+        partnerBadge: '❤️ Vincenzo',
+        sharedBadge: '💕 Juntos',
+        seenBadge: '✓ Assistido',
+        sharedTitle: 'Títulos que vocês querem assistir juntos 💕',
+        seenTitle: 'Títulos que vocês já assistiram juntos ✓',
+        emptyMyList: 'Sua lista está vazia. Adicione filmes ou séries do catálogo!',
+        emptyShared: 'Nenhum título em comum ainda. Adicionem seus favoritos! 💑',
+        emptySeen: 'Vocês ainda não assistiram nenhum título juntos. Assistam algo e marquem como visto! 🎬',
+        errorLoad: 'Erro ao carregar dados do Google Sheets',
+        errorSave: 'Erro ao salvar no Google Sheets',
+        errorRemove: 'Erro ao remover do Google Sheets',
+        close: 'Fechar',
+        previous: 'Anterior',
+        next: 'Próxima',
+        page: 'Página',
+        of: 'de',
+        syncWatch: '🔗 Watch Together',
+        editSync: '✏️',
+        syncModalTitle: 'Editar Link de Sincronização',
+        syncModalDescription: 'Insira o link gerado pela extensão de sincronização (ex. Teleparty, Syncwatch)',
+        syncPlaceholder: 'https://...',
+        save: '💾 Salvar',
+        cancel: 'Cancelar',
+        syncSaved: 'Link salvo com sucesso!',
+        syncError: 'Erro ao salvar o link',
+        noSyncLink: 'Nenhum link de sincronização configurado. Clique no botão ✏️ para adicionar um.',
+        noOverview: 'Nenhuma descrição disponível.',
+        noTitle: 'Título não disponível'
+    }
+};
 
 function t(key) {
     return translations[currentUser]?.[key] || key;
 }
 
-function getCatalogContent() {
-    return document.getElementById('catalogContent');
+function getCatalogGrid() {
+    return document.getElementById('catalogGrid');
+}
+
+function getCatalogPagination() {
+    return document.getElementById('catalogPagination');
 }
 
 function getMovieKey(item) {
-    return `${item.id}|${item.provider || 'disney'}|${item.mediaType || 'movie'}`;
+    return `${item.id}|${item.mediaType || 'movie'}`;
 }
 
 function mapTmdbItem(item, mediaType, provider = currentProvider) {
@@ -134,7 +144,7 @@ function mapTmdbItem(item, mediaType, provider = currentProvider) {
     const date = mediaType === 'tv' ? item.first_air_date : item.release_date;
     return {
         id: item.id,
-        title: title || 'Titolo non disponibile',
+        title: title || t('noTitle'),
         year: date ? new Date(date).getFullYear() : 'N/A',
         poster: item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : '',
         overview: item.overview || '',
@@ -263,7 +273,7 @@ function markAsSeenInSheets(item, seen) {
 }
 
 function showError(message) {
-    const target = getCatalogContent();
+    const target = document.getElementById('catalogTab');
     if (!target) return;
     const div = document.createElement('div');
     div.className = 'error-message';
@@ -273,7 +283,7 @@ function showError(message) {
 }
 
 function showSuccessMessage(message) {
-    const target = getCatalogContent();
+    const target = document.getElementById('catalogTab');
     if (!target) return;
     const div = document.createElement('div');
     div.className = 'success-message';
@@ -286,6 +296,11 @@ function showSuccessMessage(message) {
 async function login(user) {
     currentUser = user;
     currentRegion = user === 'vincenzo' ? 'italy' : 'brazil';
+    try {
+        localStorage.setItem('vandm_user', user);
+    } catch (e) {
+        console.warn('localStorage error:', e);
+    }
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appScreen').style.display = 'block';
     document.getElementById('welcomeText').textContent = t('welcome');
@@ -296,6 +311,14 @@ async function login(user) {
     switchCatalog('disney', document.getElementById('disneyCatalogBtn'));
 }
 
+function updateSearchPlaceholder() {
+    const searchBox = document.getElementById('searchBox');
+    if (!searchBox) return;
+    searchBox.placeholder = currentProvider === 'netflix'
+        ? t('searchPlaceholderNetflix')
+        : t('searchPlaceholderDisney');
+}
+
 function updateUILanguage() {
     document.querySelector('.logout-btn').textContent = t('logout');
     document.getElementById('disneyCatalogBtn').textContent = t('tabCatalog');
@@ -303,9 +326,7 @@ function updateUILanguage() {
     document.getElementById('myListTabBtn').textContent = t('tabMyList');
     document.getElementById('sharedTabBtn').textContent = t('tabShared');
     document.getElementById('seenTabBtn').textContent = t('tabSeen');
-    document.getElementById('searchBox').placeholder = currentUser === 'vincenzo'
-        ? (currentProvider === 'netflix' ? 'Cerca su Netflix Italia...' : t('searchPlaceholder'))
-        : (currentProvider === 'netflix' ? 'Buscar na Netflix Brasil...' : t('searchPlaceholder'));
+    updateSearchPlaceholder();
     document.getElementById('sharedTitle').textContent = t('sharedTitle');
     document.getElementById('seenTitle').textContent = t('seenTitle');
     document.getElementById('movieTypeMovies').textContent = t('moviesLabel');
@@ -313,6 +334,11 @@ function updateUILanguage() {
 }
 
 function logout() {
+    try {
+        localStorage.removeItem('vandm_user');
+    } catch (e) {
+        console.warn('localStorage error:', e);
+    }
     currentUser = null;
     currentRegion = null;
     allMovies = [];
@@ -327,22 +353,18 @@ function logout() {
 
 function switchCatalog(provider, button) {
     currentProvider = provider;
-    currentMediaType = provider === 'netflix' ? currentMediaType : 'movie';
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(panel => panel.style.display = 'none');
     button?.classList.add('active');
     document.getElementById('catalogTab').style.display = 'block';
-    document.getElementById('mediaTypeControls').style.display = provider === 'netflix' ? 'flex' : 'none';
+    document.getElementById('mediaTypeControls').style.display = 'flex';
     document.getElementById('movieTypeMovies').classList.toggle('active', currentMediaType === 'movie');
     document.getElementById('movieTypeTv').classList.toggle('active', currentMediaType === 'tv');
-    document.getElementById('searchBox').placeholder = currentUser === 'vincenzo'
-        ? `Cerca su ${provider === 'netflix' ? 'Netflix' : 'Disney+'} Italia...`
-        : `Buscar na ${provider === 'netflix' ? 'Netflix' : 'Disney+'} Brasil...`;
+    updateSearchPlaceholder();
     loadCatalog(1);
 }
 
 function setMediaType(mediaType, button) {
-    if (currentProvider !== 'netflix') return;
     currentMediaType = mediaType;
     document.querySelectorAll('.media-type-btn').forEach(btn => btn.classList.remove('active'));
     button.classList.add('active');
@@ -353,8 +375,12 @@ async function loadCatalog(page = 1) {
     currentPage = page;
     isSearching = false;
     currentSearchQuery = '';
-    document.getElementById('searchBox').value = '';
-    getCatalogContent().innerHTML = `<div class="loading">${t('loading')}</div>`;
+    const searchBox = document.getElementById('searchBox');
+    if (searchBox) searchBox.value = '';
+    const grid = getCatalogGrid();
+    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
+    const pagination = getCatalogPagination();
+    if (pagination) pagination.innerHTML = '';
     try {
         const result = await fetchCatalog(currentProvider, currentMediaType, page);
         allMovies = result.movies;
@@ -363,7 +389,8 @@ async function loadCatalog(page = 1) {
         updatePagination();
     } catch (error) {
         console.error('Catalog load error:', error);
-        getCatalogContent().innerHTML = `<div class="empty-state">${t('errorLoad')}</div>`;
+        if (grid) grid.innerHTML = `<div class="empty-state">${t('errorLoad')}</div>`;
+        if (pagination) pagination.innerHTML = '';
     }
 }
 
@@ -371,7 +398,10 @@ async function loadSearchResults(query, page = 1) {
     isSearching = true;
     currentSearchQuery = query;
     currentPage = page;
-    getCatalogContent().innerHTML = `<div class="loading">${t('loading')}</div>`;
+    const grid = getCatalogGrid();
+    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
+    const pagination = getCatalogPagination();
+    if (pagination) pagination.innerHTML = '';
     try {
         const result = await searchCatalog(query, currentProvider, currentMediaType, page);
         allMovies = result.movies;
@@ -380,18 +410,23 @@ async function loadSearchResults(query, page = 1) {
         updatePagination();
     } catch (error) {
         console.error('Search error:', error);
-        getCatalogContent().innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+        if (grid) grid.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+        if (pagination) pagination.innerHTML = '';
     }
 }
 
 function updatePagination() {
-    if (totalPages <= 1) return;
-    getCatalogContent().insertAdjacentHTML('beforeend', `
-        <div class="pagination">
-            <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>◀ ${t('previous')}</button>
-            <span class="page-info">${t('page')} ${currentPage} ${t('of')} ${totalPages}</span>
-            <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>${t('next')} ▶</button>
-        </div>`);
+    const pagination = getCatalogPagination();
+    if (!pagination) return;
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    pagination.innerHTML = `
+        <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>◀ ${t('previous')}</button>
+        <span class="page-info">${t('page')} ${currentPage} ${t('of')} ${totalPages}</span>
+        <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>${t('next')} ▶</button>
+    `;
 }
 
 async function changePage(page) {
@@ -427,18 +462,22 @@ function escapeHtml(value) {
 }
 
 function displayCatalog(items) {
-    const target = getCatalogContent();
+    const grid = getCatalogGrid();
+    if (!grid) return;
     if (!items.length) {
-        target.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+        grid.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
+        const pagination = getCatalogPagination();
+        if (pagination) pagination.innerHTML = '';
         return;
     }
-    target.innerHTML = `<div class="movies-grid">${items.map(item => renderMovieCard(item, { showPartner: true })).join('')}</div>`;
+    grid.innerHTML = items.map(item => renderMovieCard(item, { showPartner: true, showSeen: true })).join('');
 }
 
 async function toggleMovie(id, mediaType = currentMediaType, provider = currentProvider) {
-    const key = `${id}|${provider}|${mediaType}`;
+    const key = getMovieKey({ id, mediaType });
     const item = allMovies.find(m => getMovieKey(m) === key)
         || userLists[currentUser].find(m => getMovieKey(m) === key)
+        || userLists[currentUser === 'vincenzo' ? 'millena' : 'vincenzo'].find(m => getMovieKey(m) === key)
         || currentModalMovie;
     if (!item) return;
     const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
@@ -460,7 +499,11 @@ function updateMyList() {
     const target = document.getElementById('mylistContent');
     const items = userLists[currentUser];
     target.innerHTML = items.length
-        ? `<div class="movies-grid">${items.map(item => renderMovieCard(item)).join('')}</div>`
+        ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
+            showPartner: true,
+            showSeen: true,
+            action: `<button class="add-btn remove-btn" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">🗑️ ${t('removeButton')}</button>`
+        })).join('')}</div>`
         : `<div class="empty-state">${t('emptyMyList')}</div>`;
 }
 
@@ -478,7 +521,7 @@ function updateSharedList() {
     const items = getSharedItems();
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
-            action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">${t('seenButton')}</button>`
+            action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">✓ ${t('seenButton')}</button>`
         })).join('')}</div>`
         : `<div class="empty-state">${t('emptyShared')}</div>`;
 }
@@ -489,13 +532,13 @@ function updateSeenList() {
         seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
-            action: `<button class="add-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">${t('notSeenButton')}</button>`
+            action: `<button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>`
         })).join('')}</div>`
         : `<div class="empty-state">${t('emptySeen')}</div>`;
 }
 
 async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
-    const key = `${id}|${provider}|${mediaType}`;
+    const key = getMovieKey({ id, mediaType });
     const item = userLists.vincenzo.find(m => getMovieKey(m) === key)
         || userLists.millena.find(m => getMovieKey(m) === key);
     if (!item) return;
@@ -549,7 +592,7 @@ async function openMovieModal(id, mediaType = currentMediaType, provider = curre
         document.getElementById('modalTitle').textContent = item.title;
         document.getElementById('modalYear').textContent = `${item.year} · ${provider === 'netflix' ? 'Netflix' : 'Disney+'} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
         document.getElementById('modalRating').textContent = item.rating ? `⭐ ${Number(item.rating).toFixed(1)}` : '';
-        document.getElementById('modalOverview').textContent = item.overview || 'Nessuna descrizione disponibile.';
+        document.getElementById('modalOverview').textContent = item.overview || t('noOverview');
         updateModalAddButton();
         document.getElementById('movieModal').classList.add('active');
         document.body.style.overflow = 'hidden';
@@ -613,7 +656,11 @@ function updateSyncButton() {
 
 function openSyncWatch() {
     if (!syncWatchLink.trim()) return alert(t('noSyncLink'));
-    window.open(syncWatchLink, '_blank', 'noopener');
+    let url = syncWatchLink.trim();
+    if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function openEditSyncModal() {
@@ -634,7 +681,10 @@ function closeEditSyncModal(event) {
 }
 
 async function saveSyncLink() {
-    const newLink = document.getElementById('syncLinkInput').value.trim();
+    let newLink = document.getElementById('syncLinkInput').value.trim();
+    if (newLink && !/^https?:\/\//i.test(newLink)) {
+        newLink = 'https://' + newLink;
+    }
     try {
         await fetch(SHEETS_API_URL, {
             method: 'POST', mode: 'no-cors',
@@ -659,4 +709,13 @@ document.addEventListener('DOMContentLoaded', () => {
             closeEditSyncModal();
         }
     });
+
+    try {
+        const savedUser = localStorage.getItem('vandm_user');
+        if (savedUser && ['vincenzo', 'millena'].includes(savedUser)) {
+            login(savedUser);
+        }
+    } catch (e) {
+        console.warn('localStorage error:', e);
+    }
 });
