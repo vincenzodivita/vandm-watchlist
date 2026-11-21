@@ -632,14 +632,19 @@ function renderMovieCard(item, options = {}) {
 
     let actionBtn;
     if (isPending) {
-        actionBtn = `<button class="add-btn syncing" disabled><span class="button-spinner"></span> ${t('saving')}</button>`;
+        let baseClass = 'add-btn';
+        if (options.isRemove) baseClass = 'add-btn remove-btn';
+        else if (options.isSeenBtn) baseClass = 'seen-btn';
+        else if (options.isNotSeenBtn) baseClass = 'add-btn not-seen-btn';
+        else if (inMyList) baseClass = 'add-btn added';
+        actionBtn = `<button class="${baseClass} syncing" disabled><span class="button-spinner"></span> ${t('saving')}</button>`;
     } else if (options.action) {
         actionBtn = options.action;
     } else {
         actionBtn = `<button class="add-btn ${inMyList ? 'added' : ''}" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">${inMyList ? t('addedButton') : t('addButton')}</button>`;
     }
 
-    return `<div class="movie-card">
+    return `<div class="movie-card ${isPending ? 'card-pending' : ''}">
         ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
         ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
         <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')" onerror="this.style.visibility='hidden'">
@@ -676,19 +681,13 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
         || currentModalMovie;
     if (!item) return;
 
+    if (pendingSyncKeys.has(key)) return;
     pendingSyncKeys.add(key);
+
     const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
     const isAdding = index === -1;
-    let removedItem = null;
 
-    if (isAdding) {
-        userLists[currentUser].push(item);
-    } else {
-        [removedItem] = userLists[currentUser].splice(index, 1);
-        seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
-    }
-
-    // Feedback immediato sulla UI con bottone in stato "Salvataggio..."
+    // Mostra il caricamento sul bottone mantenendo la card visibile finché non arriva il feedback da Sheets
     displayCatalog(allMovies);
     updateMyList();
     updateSharedList();
@@ -697,9 +696,22 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
     showToast(t('syncingSheets'), 'syncing', '🔄', 0);
 
     try {
-        const ok = isAdding
-            ? await addToSheets(currentUser, item)
-            : await removeFromSheets(currentUser, removedItem);
+        let ok = false;
+        if (isAdding) {
+            ok = await addToSheets(currentUser, item);
+            if (ok) {
+                userLists[currentUser].push(item);
+                saveCachedSheetsData();
+            }
+        } else {
+            const itemToRemove = userLists[currentUser][index];
+            ok = await removeFromSheets(currentUser, itemToRemove);
+            if (ok) {
+                userLists[currentUser].splice(index, 1);
+                seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
+                saveCachedSheetsData();
+            }
+        }
 
         if (ok) {
             showToast(t('syncedSheets'), 'success', '✓', 2200);
@@ -711,6 +723,7 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
         showToast(t('syncError'), 'error', '⚠️', 3500);
     } finally {
         pendingSyncKeys.delete(key);
+        // A feedback ricevuto la card viene rimossa dalla lista o il bottone aggiornato
         displayCatalog(allMovies);
         updateMyList();
         updateSharedList();
@@ -726,6 +739,7 @@ function updateMyList() {
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             showPartner: true,
             showSeen: true,
+            isRemove: true,
             action: `<button class="add-btn remove-btn" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">🗑️ ${t('removeButton')}</button>`
         })).join('')}</div>`
         : `<div class="empty-state">${t('emptyMyList')}</div>`;
@@ -745,6 +759,7 @@ function updateSharedList() {
     const items = getSharedItems();
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
+            isSeenBtn: true,
             action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">✓ ${t('seenButton')}</button>`
         })).join('')}</div>`
         : `<div class="empty-state">${t('emptyShared')}</div>`;
@@ -756,6 +771,7 @@ function updateSeenList() {
         seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
+            isNotSeenBtn: true,
             action: `<button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>`
         })).join('')}</div>`
         : `<div class="empty-state">${t('emptySeen')}</div>`;
@@ -767,14 +783,10 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
         || userLists.millena.find(m => getMovieKey(m) === key);
     if (!item) return;
 
+    if (pendingSyncKeys.has(key)) return;
     pendingSyncKeys.add(key);
-    for (const user of ['vincenzo', 'millena']) {
-        seenMovies[user] = seen
-            ? [...seenMovies[user].filter(m => getMovieKey(m) !== key), item]
-            : seenMovies[user].filter(m => getMovieKey(m) !== key);
-    }
 
-    // Feedback immediato con spinner sul bottone e toast
+    // Mantiene la card visibile e mostra il caricamento sul bottone
     updateSharedList();
     updateSeenList();
     updateMyList();
@@ -783,6 +795,12 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
     try {
         const ok = await markAsSeenInSheets(item, seen);
         if (ok) {
+            for (const user of ['vincenzo', 'millena']) {
+                seenMovies[user] = seen
+                    ? [...seenMovies[user].filter(m => getMovieKey(m) !== key), item]
+                    : seenMovies[user].filter(m => getMovieKey(m) !== key);
+            }
+            saveCachedSheetsData();
             showToast(t('syncedSheets'), 'success', '✓', 2200);
         } else {
             showToast(t('syncError'), 'error', '⚠️', 3500);
@@ -792,6 +810,7 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
         showToast(t('syncError'), 'error', '⚠️', 3500);
     } finally {
         pendingSyncKeys.delete(key);
+        // A feedback ricevuto la card viene spostata nell'altra lista
         updateSharedList();
         updateSeenList();
         updateMyList();
