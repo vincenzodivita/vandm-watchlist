@@ -951,7 +951,7 @@ function renderMovieCard(item, options = {}) {
     const isPending = pendingSyncKeys.has(key);
     const mediaLabel = item.mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel');
 
-    // Trova tutti i provider associati a questo titolo
+    // Trova i provider associati a questo titolo PER L'UTENTE CORRENTE (mai del partner)
     const providersSet = new Set();
     const addProviderKey = (p) => {
         if (!p || p === 'all') return;
@@ -961,25 +961,37 @@ function renderMovieCard(item, options = {}) {
         });
     };
 
-    addProviderKey(item.provider);
-    if (partnerItem?.provider) addProviderKey(partnerItem.provider);
-    if (myItem?.provider) addProviderKey(myItem.provider);
+    const myItem = userLists[currentUser]?.find(m => getMovieKey(m) === key)
+        || seenMovies[currentUser]?.find(m => getMovieKey(m) === key);
 
+    // 1. Controlla la disponibilità reale TMDB per la regione dell'utente corrente (IT per Vincenzo, BR per Millena)
+    const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const cachedProviderData = apiCache.providers.get(`${item.mediaType}_${item.id}`);
+    let matchedInRegion = false;
     if (cachedProviderData) {
-        const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
         const flatrate = cachedProviderData.results?.[regionCode]?.flatrate || [];
         Object.keys(PROVIDERS).forEach(pKey => {
             if (flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)) {
                 if (currentMainTab === 'catalog' && selectedProviders.length > 0) {
                     if (selectedProviders.includes(pKey)) {
                         providersSet.add(pKey);
+                        matchedInRegion = true;
                     }
                 } else {
                     providersSet.add(pKey);
+                    matchedInRegion = true;
                 }
             }
         });
+    }
+
+    // 2. Se non presente in cache o senza riscontro in cache, usa il provider salvato dall'utente corrente (mai del partner)
+    if (!matchedInRegion) {
+        if (currentMainTab === 'catalog') {
+            addProviderKey(item.provider);
+        } else if (myItem?.provider) {
+            addProviderKey(myItem.provider);
+        }
     }
 
     const platformBadgesHtml = providersSet.size > 0
@@ -1166,8 +1178,9 @@ function updateSharedList() {
 function updateSeenList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    const baseItems = seenMovies.vincenzo.filter(item =>
-        seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
+    const otherUser = currentUser === 'vincenzo' ? 'millena' : 'vincenzo';
+    const baseItems = seenMovies[currentUser].filter(item =>
+        seenMovies[otherUser].some(other => getMovieKey(other) === getMovieKey(item)));
     const items = filterListItems(baseItems);
     const isFiltered = listSearchQuery || currentListMediaType !== 'all' || selectedListGenre !== null;
     target.innerHTML = items.length
@@ -1242,16 +1255,31 @@ async function openMovieModal(id, mediaType = currentMediaType, provider = 'all'
         document.getElementById('modalBackdrop').src = item.backdrop || item.poster;
         document.getElementById('modalTitle').textContent = item.title;
 
-        let provName = '';
-        const modalProviders = [];
-        if (item.provider && item.provider !== 'all') {
-            item.provider.split('|').forEach(p => {
-                const clean = p.trim();
-                if (PROVIDERS[clean]) modalProviders.push(PROVIDERS[clean].name);
+        const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+        const modalProvidersSet = new Set();
+        const cachedProv = apiCache.providers.get(`${mediaType}_${id}`);
+        if (cachedProv) {
+            const flatrate = cachedProv.results?.[regionCode]?.flatrate || [];
+            Object.keys(PROVIDERS).forEach(pKey => {
+                if (flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)) {
+                    modalProvidersSet.add(PROVIDERS[pKey].name);
+                }
             });
         }
-        if (modalProviders.length > 0) {
-            provName = ` · ${modalProviders.join(', ')}`;
+        if (modalProvidersSet.size === 0) {
+            const myItem = userLists[currentUser]?.find(m => getMovieKey(m) === getMovieKey({ id, mediaType }))
+                || seenMovies[currentUser]?.find(m => getMovieKey(m) === getMovieKey({ id, mediaType }));
+            const provToCheck = myItem?.provider || (provider !== 'all' ? provider : null);
+            if (provToCheck) {
+                provToCheck.split('|').forEach(p => {
+                    const clean = p.trim();
+                    if (PROVIDERS[clean]) modalProvidersSet.add(PROVIDERS[clean].name);
+                });
+            }
+        }
+        let provName = '';
+        if (modalProvidersSet.size > 0) {
+            provName = ` · ${[...modalProvidersSet].join(', ')}`;
         }
         document.getElementById('modalYear').textContent = `${item.year}${provName} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
         document.getElementById('modalRating').textContent = item.rating ? `⭐ ${Number(item.rating).toFixed(1)}` : '';
