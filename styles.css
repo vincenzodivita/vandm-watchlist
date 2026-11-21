@@ -180,7 +180,15 @@
         font-weight: bold;
         margin-bottom: 5px;
         font-size: 0.95em;
-        min-height: 40px;
+        line-height: 1.3em;
+        height: 2.6em;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        word-break: break-word;
     }
 
     .movie-year {

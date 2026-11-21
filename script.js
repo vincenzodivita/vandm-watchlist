@@ -648,7 +648,7 @@ function renderMovieCard(item, options = {}) {
         ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
         ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
         <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')" onerror="this.style.visibility='hidden'">
-        <div class="movie-title" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
+        <div class="movie-title" title="${escapeHtml(item.title)}" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
         <div class="movie-year">${item.year || 'N/A'} · ${providerLabel} · ${mediaLabel}</div>
         ${item.rating ? `<div class="movie-rating">⭐ ${Number(item.rating).toFixed(1)}</div>` : ''}
         ${actionBtn}
