@@ -34,49 +34,61 @@
                 <button class="logout-btn" onclick="logout()">Esci</button>
             </div>
         </div>
-<div class="tabs">
-<button id="disneyCatalogBtn" class="tab-btn active" onclick="switchCatalog('disney', this)">Catalogo Disney+</button>
-<button id="netflixCatalogBtn" class="tab-btn" onclick="switchCatalog('netflix', this)">Catalogo Netflix</button>
-<button id="myListTabBtn" class="tab-btn" onclick="switchTab('mylist', this)">La Mia Lista</button>
-<button id="sharedTabBtn" class="tab-btn" onclick="switchTab('shared', this)">Da Vedere Insieme ❤️</button>
-<button id="seenTabBtn" class="tab-btn" onclick="switchTab('seen', this)">Già Visti ✓</button>
-</div>
+        <div class="tabs">
+            <button id="mainTabCatalogBtn" class="tab-btn active" onclick="switchMainTab('catalog', this)">🎬 Catalogo</button>
+            <button id="mainTabListBtn" class="tab-btn" onclick="switchMainTab('list', this)">📋 Lista</button>
+        </div>
 
-<div class="content">
-<!-- Catalog Tab -->
-<div id="catalogTab" class="tab-content">
-<input type="text" id="searchBox" class="search-box" placeholder="Cerca su Disney+...">
-<div id="mediaTypeControls" class="media-type-controls">
-<button id="movieTypeMovies" class="media-type-btn active" onclick="setMediaType('movie', this)">Film</button>
-<button id="movieTypeTv" class="media-type-btn" onclick="setMediaType('tv', this)">Serie TV</button>
-</div>
-<div id="catalogContent">
-<div id="catalogGrid" class="movies-grid"></div>
-<div id="catalogPagination" class="pagination"></div>
-</div>
-</div>
+        <div class="content">
+            <!-- Catalog Tab -->
+            <div id="catalogTab" class="tab-content">
+                <input type="text" id="searchBox" class="search-box" placeholder="Cerca nel catalogo...">
 
-<!-- My List Tab -->
-<div id="mylistTab" class="tab-content" style="display: none;">
-<div id="mylistContent"></div>
-</div>
+                <div class="filter-section">
+                    <div class="filter-row">
+                        <span id="labelMediaType" class="filter-label">Tipo:</span>
+                        <div id="mediaTypeControls" class="filter-buttons">
+                            <button id="movieTypeMovies" class="filter-btn active" onclick="setMediaType('movie', this)">Film</button>
+                            <button id="movieTypeTv" class="filter-btn" onclick="setMediaType('tv', this)">Serie TV</button>
+                        </div>
+                    </div>
 
-<!-- Shared List Tab -->
-<div id="sharedTab" class="tab-content" style="display: none;">
-<div class="shared-list">
-<h3 id="sharedTitle">Film che volete vedere insieme 💕</h3>
-<div id="sharedContent"></div>
-</div>
-</div>
+                    <div class="filter-row">
+                        <span id="labelPlatforms" class="filter-label">Piattaforme:</span>
+                        <div id="providerControls" class="filter-buttons">
+                            <button id="providerAllBtn" class="filter-btn active" onclick="toggleProvider('all')">Tutte</button>
+                            <button id="providerDisneyBtn" class="filter-btn" onclick="toggleProvider('disney')">Disney+</button>
+                            <button id="providerNetflixBtn" class="filter-btn" onclick="toggleProvider('netflix')">Netflix</button>
+                            <button id="providerPrimeBtn" class="filter-btn" onclick="toggleProvider('prime')">Prime Video</button>
+                            <button id="providerAppleBtn" class="filter-btn" onclick="toggleProvider('apple')">Apple TV+</button>
+                        </div>
+                    </div>
+                </div>
 
-<!-- Seen Tab -->
-<div id="seenTab" class="tab-content" style="display: none;">
-<div class="shared-list">
-<h3 id="seenTitle">Film che avete già visto insieme ✓</h3>
-<div id="seenContent"></div>
-</div>
-</div>
-</div>
+                <div id="catalogContent">
+                    <div id="catalogGrid" class="movies-grid"></div>
+                    <div id="catalogPagination" class="pagination"></div>
+                </div>
+            </div>
+
+            <!-- List Tab -->
+            <div id="listTab" class="tab-content" style="display: none;">
+                <div class="filter-section">
+                    <div class="filter-row">
+                        <div id="listTypeControls" class="filter-buttons list-filter-buttons">
+                            <button id="listTypeMyListBtn" class="filter-btn active" onclick="switchListSubTab('mylist', this)">La Mia Lista</button>
+                            <button id="listTypeSharedBtn" class="filter-btn" onclick="switchListSubTab('shared', this)">Da Vedere Insieme ❤️</button>
+                            <button id="listTypeSeenBtn" class="filter-btn" onclick="switchListSubTab('seen', this)">Già Visti ✓</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="shared-list">
+                    <h3 id="listSectionTitle">La Mia Lista</h3>
+                    <div id="listContent"></div>
+                </div>
+            </div>
+        </div>
 </div>
 </div>
 

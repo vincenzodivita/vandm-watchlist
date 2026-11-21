@@ -1,9 +1,15 @@
-// V&M Watchlist - Disney+ e Netflix
+// V&M Watchlist - Disney+, Netflix, Prime Video & All Platforms
 const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbwSl1vLF1Kvhaj4TlFyyIcLkk7la73nNteGTr-F6vtw8PWCJdpEAnZWjIwKoFv3Np1ntQ/exec';
 const TMDB_API_KEY = 'e52e82734d4a34d3494787371a7149ba';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
-const PROVIDER_IDS = { disney: 337, netflix: 8 };
+
+const PROVIDERS = {
+    disney: { id: 337, name: 'Disney+' },
+    netflix: { id: 8, name: 'Netflix' },
+    prime: { id: 119, name: 'Prime Video' },
+    apple: { id: 350, name: 'Apple TV+' }
+};
 
 let currentUser = null;
 let allMovies = [];
@@ -12,8 +18,10 @@ let seenMovies = { vincenzo: [], millena: [] };
 let currentPage = 1;
 let totalPages = 1;
 let currentRegion = null;
-let currentProvider = 'disney';
-let currentMediaType = 'movie';
+let currentMainTab = 'catalog'; // 'catalog' or 'list'
+let currentMediaType = 'movie';  // 'movie' or 'tv'
+let selectedProviders = [];     // empty = all platforms
+let currentListSubTab = 'mylist'; // 'mylist', 'shared', or 'seen'
 let isSearching = false;
 let currentSearchQuery = '';
 let currentModalMovie = null;
@@ -27,8 +35,8 @@ const pendingSyncKeys = new Set();
 
 // Performance Caches
 const apiCache = {
-    catalog: new Map(),   // key: provider_mediaType_region_lang_page
-    search: new Map(),    // key: query_provider_mediaType_region_lang_page
+    catalog: new Map(),   // key: providers_mediaType_region_lang_page
+    search: new Map(),    // key: query_providers_mediaType_region_lang_page
     providers: new Map(), // key: mediaType_id
     details: new Map()    // key: mediaType_id_lang
 };
@@ -37,17 +45,17 @@ const translations = {
     vincenzo: {
         welcome: 'Ciao Vincenzo! 🇮🇹',
         logout: 'Esci',
-        tabCatalog: 'Catalogo Disney+',
-        tabNetflix: 'Catalogo Netflix',
+        tabCatalog: '🎬 Catalogo',
+        tabList: '📋 Lista',
+        subTabMyList: 'La Mia Lista',
+        subTabShared: 'Da Vedere Insieme ❤️',
+        subTabSeen: 'Già Visti ✓',
+        filterType: 'Tipo:',
+        filterPlatforms: 'Piattaforme:',
+        platformAll: 'Tutte',
         moviesLabel: 'Film',
         seriesLabel: 'Serie TV',
-        providerNetflix: 'Netflix',
-        providerDisney: 'Disney+',
-        tabMyList: 'La Mia Lista',
-        tabShared: 'Da Vedere Insieme ❤️',
-        tabSeen: 'Già Visti ✓',
-        searchPlaceholderDisney: 'Cerca su Disney+ Italia...',
-        searchPlaceholderNetflix: 'Cerca su Netflix Italia...',
+        searchPlaceholder: 'Cerca film o serie TV...',
         loading: 'Caricamento catalogo...',
         noMovies: 'Nessun titolo trovato',
         addButton: '+ Aggiungi',
@@ -58,6 +66,7 @@ const translations = {
         partnerBadge: '❤️ Millena',
         sharedBadge: '💕 Insieme',
         seenBadge: '✓ Visto',
+        myListTitle: 'La Mia Lista',
         sharedTitle: 'Film che volete vedere insieme 💕',
         seenTitle: 'Film che avete già visto insieme ✓',
         emptyMyList: 'La tua lista è vuota. Aggiungi film o serie dal catalogo!',
@@ -90,17 +99,17 @@ const translations = {
     millena: {
         welcome: 'Olá Millena! 🇧🇷',
         logout: 'Sair',
-        tabCatalog: 'Catálogo Disney+',
-        tabNetflix: 'Catálogo Netflix',
+        tabCatalog: '🎬 Catálogo',
+        tabList: '📋 Lista',
+        subTabMyList: 'Minha Lista',
+        subTabShared: 'Para Assistir Juntos ❤️',
+        subTabSeen: 'Já Assistidos ✓',
+        filterType: 'Tipo:',
+        filterPlatforms: 'Plataformas:',
+        platformAll: 'Todas',
         moviesLabel: 'Filmes',
         seriesLabel: 'Séries',
-        providerNetflix: 'Netflix',
-        providerDisney: 'Disney+',
-        tabMyList: 'Minha Lista',
-        tabShared: 'Para Assistir Juntos ❤️',
-        tabSeen: 'Já Assistidos ✓',
-        searchPlaceholderDisney: 'Buscar no Disney+ Brasil...',
-        searchPlaceholderNetflix: 'Buscar na Netflix Brasil...',
+        searchPlaceholder: 'Buscar filmes ou séries...',
         loading: 'Carregando catálogo...',
         noMovies: 'Nenhum título encontrado',
         addButton: '+ Adicionar',
@@ -111,8 +120,9 @@ const translations = {
         partnerBadge: '❤️ Vincenzo',
         sharedBadge: '💕 Juntos',
         seenBadge: '✓ Assistido',
-        sharedTitle: 'Títulos que vocês querem assistir juntos 💕',
-        seenTitle: 'Títulos que vocês já assistiram juntos ✓',
+        myListTitle: 'Minha Lista',
+        sharedTitle: 'Títulos para assistir juntos 💕',
+        seenTitle: 'Títulos já assistidos juntos ✓',
         emptyMyList: 'Sua lista está vazia. Adicione filmes ou séries do catálogo!',
         emptyShared: 'Nenhum título em comum ancora. Adicionem seus favoritos! 💑',
         emptySeen: 'Vocês ainda não assistiram nenhum título juntos. Assistam algo e marquem como visto! 🎬',
@@ -187,7 +197,7 @@ function hideToast() {
     if (toast) toast.classList.remove('active');
 }
 
-function mapTmdbItem(item, mediaType, provider = currentProvider) {
+function mapTmdbItem(item, mediaType, provider = 'all') {
     const title = mediaType === 'tv' ? item.name : item.title;
     const date = mediaType === 'tv' ? item.first_air_date : item.release_date;
     return {
@@ -198,7 +208,7 @@ function mapTmdbItem(item, mediaType, provider = currentProvider) {
         overview: item.overview || '',
         rating: item.vote_average || 0,
         backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : '',
-        provider,
+        provider: item.provider || provider,
         mediaType
     };
 }
@@ -217,10 +227,11 @@ async function fetchWithTimeout(url, options = {}) {
     }
 }
 
-async function fetchCatalog(provider, mediaType, page = 1) {
+async function fetchCatalog(page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-    const cacheKey = `${provider}_${mediaType}_${regionCode}_${language}_${page}`;
+    const provKey = selectedProviders.slice().sort().join('-') || 'all';
+    const cacheKey = `${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
 
     if (apiCache.catalog.has(cacheKey)) {
         return apiCache.catalog.get(cacheKey);
@@ -231,27 +242,33 @@ async function fetchCatalog(provider, mediaType, page = 1) {
         language,
         page: String(page),
         sort_by: 'popularity.desc',
-        with_watch_providers: String(PROVIDER_IDS[provider]),
-        watch_region: regionCode,
-        with_watch_monetization_types: 'flatrate'
+        watch_region: regionCode
     });
-    const response = await fetchWithTimeout(`${TMDB_BASE_URL}/discover/${mediaType}?${params}`);
+
+    if (selectedProviders.length > 0) {
+        const ids = selectedProviders.map(p => PROVIDERS[p].id).join('|');
+        params.set('with_watch_providers', ids);
+        params.set('with_watch_monetization_types', 'flatrate');
+    }
+
+    const response = await fetchWithTimeout(`${TMDB_BASE_URL}/discover/${currentMediaType}?${params}`);
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
     const result = {
-        movies: (data.results || []).map(item => mapTmdbItem(item, mediaType, provider)),
+        movies: (data.results || []).map(item => mapTmdbItem(item, currentMediaType, provKey)),
         totalPages: Math.min(data.total_pages || 1, 500)
     };
     apiCache.catalog.set(cacheKey, result);
     return result;
 }
 
-async function searchCatalog(query, provider, mediaType, page = 1) {
+async function searchCatalog(query, page = 1) {
     const cleanQuery = query.trim();
     if (!cleanQuery) return { movies: [], totalPages: 0 };
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-    const cacheKey = `${cleanQuery.toLowerCase()}_${provider}_${mediaType}_${regionCode}_${language}_${page}`;
+    const provKey = selectedProviders.slice().sort().join('-') || 'all';
+    const cacheKey = `${cleanQuery.toLowerCase()}_${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
 
     if (apiCache.search.has(cacheKey)) {
         return apiCache.search.get(cacheKey);
@@ -266,26 +283,37 @@ async function searchCatalog(query, provider, mediaType, page = 1) {
     const params = new URLSearchParams({
         api_key: TMDB_API_KEY, query: cleanQuery, language, page: String(page), include_adult: 'false'
     });
-    const response = await fetch(`${TMDB_BASE_URL}/search/${mediaType}?${params}`, { signal });
+    const response = await fetch(`${TMDB_BASE_URL}/search/${currentMediaType}?${params}`, { signal });
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
     const candidates = (data.results || []).slice(0, 20);
 
+    // Se non ci sono filtri provider selezionati (Tutte), restituisce subito i risultati senza 20 chiamate extra
+    if (selectedProviders.length === 0) {
+        const result = {
+            movies: candidates.map(item => mapTmdbItem(item, currentMediaType, 'all')),
+            totalPages: Math.min(data.total_pages || 1, 500)
+        };
+        apiCache.search.set(cacheKey, result);
+        return result;
+    }
+
+    const targetProviderIds = selectedProviders.map(p => PROVIDERS[p].id);
     const filtered = await Promise.all(candidates.map(async item => {
         try {
-            const providerKey = `${mediaType}_${item.id}`;
+            const providerKey = `${currentMediaType}_${item.id}`;
             let providerData = apiCache.providers.get(providerKey);
             if (!providerData) {
                 const providerResponse = await fetch(
-                    `${TMDB_BASE_URL}/${mediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`,
+                    `${TMDB_BASE_URL}/${currentMediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`,
                     { signal }
                 );
                 providerData = await providerResponse.json();
                 apiCache.providers.set(providerKey, providerData);
             }
             const regionalProviders = providerData.results?.[regionCode]?.flatrate || [];
-            return regionalProviders.some(p => p.provider_id === PROVIDER_IDS[provider])
-                ? mapTmdbItem(item, mediaType, provider) : null;
+            return regionalProviders.some(p => targetProviderIds.includes(p.provider_id))
+                ? mapTmdbItem(item, currentMediaType, provKey) : null;
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.warn('Provider check failed:', error);
@@ -347,7 +375,7 @@ async function loadFromSheets() {
                 title: row.title,
                 year: row.year,
                 poster: row.poster,
-                provider: row.provider || 'disney',
+                provider: row.provider || 'all',
                 mediaType: row.mediaType || 'movie'
             };
             userLists[row.user].push(item);
@@ -383,7 +411,7 @@ function addToSheets(user, item) {
     return postToSheets({
         action: 'add', user, movieId: item.id, title: item.title,
         year: item.year, poster: item.poster,
-        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+        provider: item.provider || 'all', mediaType: item.mediaType || 'movie'
     }, t('errorSave'));
 }
 
@@ -391,7 +419,7 @@ function removeFromSheets(user, item) {
     saveCachedSheetsData();
     return postToSheets({
         action: 'remove', user, movieId: item.id,
-        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+        provider: item.provider || 'all', mediaType: item.mediaType || 'movie'
     }, t('errorRemove'));
 }
 
@@ -399,7 +427,7 @@ function markAsSeenInSheets(item, seen) {
     saveCachedSheetsData();
     return postToSheets({
         action: 'markSeen', movieId: item.id, seen,
-        provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
+        provider: item.provider || 'all', mediaType: item.mediaType || 'movie'
     }, t('errorSave'));
 }
 
@@ -429,9 +457,7 @@ async function syncWithSheets() {
         await Promise.allSettled([loadFromSheets(), loadSyncLink()]);
         saveCachedSheetsData();
         displayCatalog(allMovies);
-        updateMyList();
-        updateSharedList();
-        updateSeenList();
+        renderCurrentListSubTab();
     } catch (e) {
         console.warn('Background sync error:', e);
     }
@@ -452,36 +478,32 @@ async function login(user) {
     document.body.classList.toggle('vincenzo-color', user === 'vincenzo');
     updateUILanguage();
 
-    // 1. Mostra istantaneamente i dati dalla cache locale (0ms di attesa)
+    // 1. Ripristino immediato da cache locale
     loadCachedSheetsData();
 
-    // 2. Avvia subito il rendering del catalogo TMDB
-    switchCatalog('disney', document.getElementById('disneyCatalogBtn'));
+    // 2. Avvio immediato della visualizzazione catalogo
+    switchMainTab('catalog', document.getElementById('mainTabCatalogBtn'));
 
-    // 3. Sincronizza i dati freschi da Google Sheets in background senza bloccare la UI
+    // 3. Sync in background con Sheets
     syncWithSheets();
-}
-
-function updateSearchPlaceholder() {
-    const searchBox = document.getElementById('searchBox');
-    if (!searchBox) return;
-    searchBox.placeholder = currentProvider === 'netflix'
-        ? t('searchPlaceholderNetflix')
-        : t('searchPlaceholderDisney');
 }
 
 function updateUILanguage() {
     document.querySelector('.logout-btn').textContent = t('logout');
-    document.getElementById('disneyCatalogBtn').textContent = t('tabCatalog');
-    document.getElementById('netflixCatalogBtn').textContent = t('tabNetflix');
-    document.getElementById('myListTabBtn').textContent = t('tabMyList');
-    document.getElementById('sharedTabBtn').textContent = t('tabShared');
-    document.getElementById('seenTabBtn').textContent = t('tabSeen');
-    updateSearchPlaceholder();
-    document.getElementById('sharedTitle').textContent = t('sharedTitle');
-    document.getElementById('seenTitle').textContent = t('seenTitle');
+    document.getElementById('mainTabCatalogBtn').textContent = t('tabCatalog');
+    document.getElementById('mainTabListBtn').textContent = t('tabList');
+    document.getElementById('searchBox').placeholder = t('searchPlaceholder');
+    document.getElementById('labelMediaType').textContent = t('filterType');
+    document.getElementById('labelPlatforms').textContent = t('filterPlatforms');
+    document.getElementById('providerAllBtn').textContent = t('platformAll');
     document.getElementById('movieTypeMovies').textContent = t('moviesLabel');
     document.getElementById('movieTypeTv').textContent = t('seriesLabel');
+
+    document.getElementById('listTypeMyListBtn').textContent = t('subTabMyList');
+    document.getElementById('listTypeSharedBtn').textContent = t('subTabShared');
+    document.getElementById('listTypeSeenBtn').textContent = t('subTabSeen');
+
+    renderCurrentListSubTab();
 }
 
 function logout() {
@@ -497,30 +519,84 @@ function logout() {
     totalPages = 1;
     isSearching = false;
     currentSearchQuery = '';
+    selectedProviders = [];
+    currentMainTab = 'catalog';
+    currentListSubTab = 'mylist';
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('appScreen').style.display = 'none';
     document.body.classList.remove('vincenzo-color');
     hideToast();
 }
 
-function switchCatalog(provider, button) {
-    currentProvider = provider;
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(panel => panel.style.display = 'none');
+// Main Tabs Navigation
+function switchMainTab(tab, button) {
+    currentMainTab = tab;
+    document.querySelectorAll('.tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.content > .tab-content').forEach(panel => panel.style.display = 'none');
     button?.classList.add('active');
-    document.getElementById('catalogTab').style.display = 'block';
-    document.getElementById('mediaTypeControls').style.display = 'flex';
-    document.getElementById('movieTypeMovies').classList.toggle('active', currentMediaType === 'movie');
-    document.getElementById('movieTypeTv').classList.toggle('active', currentMediaType === 'tv');
-    updateSearchPlaceholder();
+
+    if (tab === 'catalog') {
+        document.getElementById('catalogTab').style.display = 'block';
+        loadCatalog(currentPage);
+    } else if (tab === 'list') {
+        document.getElementById('listTab').style.display = 'block';
+        renderCurrentListSubTab();
+    }
+}
+
+// List Sub-Tabs Navigation (Single-Select)
+function switchListSubTab(subTab, button) {
+    currentListSubTab = subTab;
+    document.querySelectorAll('#listTypeControls .filter-btn').forEach(btn => btn.classList.remove('active'));
+    button?.classList.add('active');
+    renderCurrentListSubTab();
+}
+
+function renderCurrentListSubTab() {
+    const titleEl = document.getElementById('listSectionTitle');
+    if (currentListSubTab === 'mylist') {
+        if (titleEl) titleEl.textContent = t('myListTitle');
+        updateMyList();
+    } else if (currentListSubTab === 'shared') {
+        if (titleEl) titleEl.textContent = t('sharedTitle');
+        updateSharedList();
+    } else if (currentListSubTab === 'seen') {
+        if (titleEl) titleEl.textContent = t('seenTitle');
+        updateSeenList();
+    }
+}
+
+// Media Type Filter (Film / Serie TV)
+function setMediaType(mediaType, button) {
+    currentMediaType = mediaType;
+    document.querySelectorAll('#mediaTypeControls .filter-btn').forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
     loadCatalog(1);
 }
 
-function setMediaType(mediaType, button) {
-    currentMediaType = mediaType;
-    document.querySelectorAll('.media-type-btn').forEach(btn => btn.classList.remove('active'));
-    button.classList.add('active');
+// Provider Multiselect Filter
+function toggleProvider(providerKey) {
+    if (providerKey === 'all') {
+        selectedProviders = [];
+    } else {
+        const index = selectedProviders.indexOf(providerKey);
+        if (index > -1) {
+            selectedProviders.splice(index, 1);
+        } else {
+            selectedProviders.push(providerKey);
+        }
+    }
+    updateProviderButtonsUI();
     loadCatalog(1);
+}
+
+function updateProviderButtonsUI() {
+    const isAll = selectedProviders.length === 0;
+    document.getElementById('providerAllBtn')?.classList.toggle('active', isAll);
+    document.getElementById('providerDisneyBtn')?.classList.toggle('active', selectedProviders.includes('disney'));
+    document.getElementById('providerNetflixBtn')?.classList.toggle('active', selectedProviders.includes('netflix'));
+    document.getElementById('providerPrimeBtn')?.classList.toggle('active', selectedProviders.includes('prime'));
+    document.getElementById('providerAppleBtn')?.classList.toggle('active', selectedProviders.includes('apple'));
 }
 
 async function loadCatalog(page = 1) {
@@ -534,9 +610,9 @@ async function loadCatalog(page = 1) {
 
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-    const cacheKey = `${currentProvider}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const provKey = selectedProviders.slice().sort().join('-') || 'all';
+    const cacheKey = `${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
 
-    // Se è già in cache, rendering istantaneo a 0ms!
     if (apiCache.catalog.has(cacheKey)) {
         const cached = apiCache.catalog.get(cacheKey);
         allMovies = cached.movies;
@@ -549,7 +625,7 @@ async function loadCatalog(page = 1) {
     if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     if (pagination) pagination.innerHTML = '';
     try {
-        const result = await fetchCatalog(currentProvider, currentMediaType, page);
+        const result = await fetchCatalog(page);
         allMovies = result.movies;
         totalPages = result.totalPages;
         displayCatalog(allMovies);
@@ -571,9 +647,9 @@ async function loadSearchResults(query, page = 1) {
     const cleanQuery = query.trim().toLowerCase();
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-    const cacheKey = `${cleanQuery}_${currentProvider}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const provKey = selectedProviders.slice().sort().join('-') || 'all';
+    const cacheKey = `${cleanQuery}_${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
 
-    // Se è già in cache, rendering istantaneo
     if (apiCache.search.has(cacheKey)) {
         const cached = apiCache.search.get(cacheKey);
         allMovies = cached.movies;
@@ -586,7 +662,7 @@ async function loadSearchResults(query, page = 1) {
     if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     if (pagination) pagination.innerHTML = '';
     try {
-        const result = await searchCatalog(query, currentProvider, currentMediaType, page);
+        const result = await searchCatalog(query, page);
         allMovies = result.movies;
         totalPages = result.totalPages;
         displayCatalog(allMovies);
@@ -628,7 +704,11 @@ function renderMovieCard(item, options = {}) {
     const isSeen = seenMovies[currentUser].some(m => getMovieKey(m) === key);
     const isPending = pendingSyncKeys.has(key);
     const mediaLabel = item.mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel');
-    const providerLabel = item.provider === 'netflix' ? 'Netflix' : 'Disney+';
+
+    let providerLabel = '';
+    if (item.provider && PROVIDERS[item.provider]) {
+        providerLabel = ` · ${PROVIDERS[item.provider].name}`;
+    }
 
     let actionBtn;
     if (isPending) {
@@ -649,7 +729,7 @@ function renderMovieCard(item, options = {}) {
         ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
         <img src="${item.poster || ''}" alt="${escapeHtml(item.title)}" class="movie-poster" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')" onerror="this.style.visibility='hidden'">
         <div class="movie-title" title="${escapeHtml(item.title)}" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
-        <div class="movie-year">${item.year || 'N/A'} · ${providerLabel} · ${mediaLabel}</div>
+        <div class="movie-year">${item.year || 'N/A'}${providerLabel} · ${mediaLabel}</div>
         ${item.rating ? `<div class="movie-rating">⭐ ${Number(item.rating).toFixed(1)}</div>` : ''}
         ${actionBtn}
     </div>`;
@@ -673,7 +753,7 @@ function displayCatalog(items) {
     grid.innerHTML = items.map(item => renderMovieCard(item, { showPartner: true, showSeen: true })).join('');
 }
 
-async function toggleMovie(id, mediaType = currentMediaType, provider = currentProvider) {
+async function toggleMovie(id, mediaType = currentMediaType, provider = 'all') {
     const key = getMovieKey({ id, mediaType });
     const item = allMovies.find(m => getMovieKey(m) === key)
         || userLists[currentUser].find(m => getMovieKey(m) === key)
@@ -687,11 +767,9 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
     const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
     const isAdding = index === -1;
 
-    // Mostra il caricamento sul bottone mantenendo la card visibile finché non arriva il feedback da Sheets
+    // Feedback immediato con stato "Salvataggio..." sul pulsante
     displayCatalog(allMovies);
-    updateMyList();
-    updateSharedList();
-    updateSeenList();
+    renderCurrentListSubTab();
     updateModalAddButton();
     showToast(t('syncingSheets'), 'syncing', '🔄', 0);
 
@@ -723,17 +801,15 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
         showToast(t('syncError'), 'error', '⚠️', 3500);
     } finally {
         pendingSyncKeys.delete(key);
-        // A feedback ricevuto la card viene rimossa dalla lista o il bottone aggiornato
         displayCatalog(allMovies);
-        updateMyList();
-        updateSharedList();
-        updateSeenList();
+        renderCurrentListSubTab();
         updateModalAddButton();
     }
 }
 
 function updateMyList() {
-    const target = document.getElementById('mylistContent');
+    const target = document.getElementById('listContent');
+    if (!target) return;
     const items = userLists[currentUser];
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
@@ -755,7 +831,8 @@ function getSharedItems() {
 }
 
 function updateSharedList() {
-    const target = document.getElementById('sharedContent');
+    const target = document.getElementById('listContent');
+    if (!target) return;
     const items = getSharedItems();
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
@@ -766,7 +843,8 @@ function updateSharedList() {
 }
 
 function updateSeenList() {
-    const target = document.getElementById('seenContent');
+    const target = document.getElementById('listContent');
+    if (!target) return;
     const items = seenMovies.vincenzo.filter(item =>
         seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
     target.innerHTML = items.length
@@ -777,7 +855,7 @@ function updateSeenList() {
         : `<div class="empty-state">${t('emptySeen')}</div>`;
 }
 
-async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
+async function toggleSeen(id, seen, mediaType = 'movie', provider = 'all') {
     const key = getMovieKey({ id, mediaType });
     const item = userLists.vincenzo.find(m => getMovieKey(m) === key)
         || userLists.millena.find(m => getMovieKey(m) === key);
@@ -786,10 +864,7 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
     if (pendingSyncKeys.has(key)) return;
     pendingSyncKeys.add(key);
 
-    // Mantiene la card visibile e mostra il caricamento sul bottone
-    updateSharedList();
-    updateSeenList();
-    updateMyList();
+    renderCurrentListSubTab();
     showToast(t('syncingSheets'), 'syncing', '🔄', 0);
 
     try {
@@ -810,26 +885,7 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
         showToast(t('syncError'), 'error', '⚠️', 3500);
     } finally {
         pendingSyncKeys.delete(key);
-        // A feedback ricevuto la card viene spostata nell'altra lista
-        updateSharedList();
-        updateSeenList();
-        updateMyList();
-    }
-}
-
-function switchTab(tab, button) {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(panel => panel.style.display = 'none');
-    button?.classList.add('active');
-    if (tab === 'mylist') {
-        document.getElementById('mylistTab').style.display = 'block';
-        updateMyList();
-    } else if (tab === 'shared') {
-        document.getElementById('sharedTab').style.display = 'block';
-        updateSharedList();
-    } else if (tab === 'seen') {
-        document.getElementById('seenTab').style.display = 'block';
-        updateSeenList();
+        renderCurrentListSubTab();
     }
 }
 
@@ -845,7 +901,7 @@ function handleSearch() {
 }
 
 // Movie details modal with cache
-async function openMovieModal(id, mediaType = currentMediaType, provider = currentProvider) {
+async function openMovieModal(id, mediaType = currentMediaType, provider = 'all') {
     try {
         const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
         const cacheKey = `${mediaType}_${id}_${language}`;
@@ -862,7 +918,12 @@ async function openMovieModal(id, mediaType = currentMediaType, provider = curre
         currentModalMovie = item;
         document.getElementById('modalBackdrop').src = item.backdrop || item.poster;
         document.getElementById('modalTitle').textContent = item.title;
-        document.getElementById('modalYear').textContent = `${item.year} · ${provider === 'netflix' ? 'Netflix' : 'Disney+'} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
+
+        let provName = '';
+        if (item.provider && PROVIDERS[item.provider]) {
+            provName = ` · ${PROVIDERS[item.provider].name}`;
+        }
+        document.getElementById('modalYear').textContent = `${item.year}${provName} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
         document.getElementById('modalRating').textContent = item.rating ? `⭐ ${Number(item.rating).toFixed(1)}` : '';
         document.getElementById('modalOverview').textContent = item.overview || t('noOverview');
         updateModalAddButton();
