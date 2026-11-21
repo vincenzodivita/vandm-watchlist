@@ -779,6 +779,19 @@
     min-width: 140px;
 }
 
+.genre-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.genre-btn {
+    padding: 6px 12px;
+    font-size: 0.82em;
+    border-radius: 6px;
+}
+
 .media-type-controls {
     display: flex;
     gap: 10px;

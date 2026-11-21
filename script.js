@@ -10,6 +10,19 @@ const PROVIDERS = {
     prime: { id: 119, name: 'Prime Video' }
 };
 
+const GENRES = [
+    { key: 'action', it: 'Azione', pt: 'Ação', movieIds: [28, 12], tvIds: [10759] },
+    { key: 'comedy', it: 'Commedia', pt: 'Comédia', movieIds: [35], tvIds: [35] },
+    { key: 'drama', it: 'Dramma', pt: 'Drama', movieIds: [18], tvIds: [18] },
+    { key: 'animation', it: 'Animazione', pt: 'Animação', movieIds: [16], tvIds: [16] },
+    { key: 'scifi', it: 'Fantascienza', pt: 'Ficção Científica', movieIds: [878, 14], tvIds: [10765] },
+    { key: 'romance', it: 'Romance', pt: 'Romance', movieIds: [10749], tvIds: [18] },
+    { key: 'horror', it: 'Horror & Thriller', pt: 'Terror & Suspense', movieIds: [27, 53], tvIds: [9648] },
+    { key: 'crime', it: 'Crime & Mistero', pt: 'Crime & Mistério', movieIds: [80, 9648], tvIds: [80, 9648] },
+    { key: 'family', it: 'Famiglia', pt: 'Família', movieIds: [10751], tvIds: [10751, 10762] },
+    { key: 'doc', it: 'Documentario', pt: 'Documentário', movieIds: [99], tvIds: [99] }
+];
+
 let currentUser = null;
 let allMovies = [];
 let userLists = { vincenzo: [], millena: [] };
@@ -20,7 +33,10 @@ let currentRegion = null;
 let currentMainTab = 'catalog'; // 'catalog' or 'list'
 let currentMediaType = 'movie';  // 'movie' or 'tv'
 let selectedProviders = [];     // empty = all platforms
+let selectedCatalogGenre = null; // null = all genres
 let currentListSubTab = 'mylist'; // 'mylist', 'shared', or 'seen'
+let currentListMediaType = 'all'; // 'all', 'movie', or 'tv'
+let selectedListGenre = null;     // null = all genres
 let filterOnlyUnsaved = false;
 let listSearchQuery = '';
 let isSearching = false;
@@ -36,8 +52,8 @@ const pendingSyncKeys = new Set();
 
 // Performance Caches
 const apiCache = {
-    catalog: new Map(),   // key: providers_mediaType_region_lang_page
-    search: new Map(),    // key: query_providers_mediaType_region_lang_page
+    catalog: new Map(),   // key: providers_mediaType_genre_region_lang_page
+    search: new Map(),    // key: query_providers_mediaType_genre_region_lang_page
     providers: new Map(), // key: mediaType_id
     details: new Map()    // key: mediaType_id_lang
 };
@@ -53,16 +69,18 @@ const translations = {
         subTabSeen: 'Già Visti ✓',
         filterType: 'Tipo:',
         filterPlatforms: 'Piattaforme:',
+        filterGenres: 'Genere:',
         filterViewLabel: 'Filtra:',
         filterUnsaved: '👁️ Solo non in lista o visti',
         platformAll: 'Tutte',
+        typeAll: 'Tutti',
         moviesLabel: 'Film',
         seriesLabel: 'Serie TV',
         searchPlaceholder: 'Cerca film o serie TV...',
         searchPlaceholderList: 'Cerca tra i titoli salvati...',
         loading: 'Caricamento catalogo...',
         noMovies: 'Nessun titolo trovato',
-        noMoviesSearch: 'Nessun titolo corrisponde alla ricerca',
+        noMoviesSearch: 'Nessun titolo corrisponde alla ricerca o ai filtri',
         allMoviesSaved: 'Tutti i titoli di questa pagina sono già nella tua lista o visti! 🍿',
         addButton: '+ Aggiungi',
         addedButton: '✓ Nella mia lista',
@@ -112,16 +130,18 @@ const translations = {
         subTabSeen: 'Já Assistidos ✓',
         filterType: 'Tipo:',
         filterPlatforms: 'Plataformas:',
+        filterGenres: 'Gênero:',
         filterViewLabel: 'Filtrar:',
         filterUnsaved: '👁️ Apenas não salvos / vistos',
         platformAll: 'Todas',
+        typeAll: 'Todos',
         moviesLabel: 'Filmes',
         seriesLabel: 'Séries',
         searchPlaceholder: 'Buscar filmes ou séries...',
         searchPlaceholderList: 'Buscar nos títulos salvos...',
         loading: 'Carregando catálogo...',
         noMovies: 'Nenhum título encontrado',
-        noMoviesSearch: 'Nenhum título corresponde à busca',
+        noMoviesSearch: 'Nenhum título corresponde à busca ou filtros',
         allMoviesSaved: 'Todos os títulos desta página já estão na sua lista ou foram assistidos! 🍿',
         addButton: '+ Adicionar',
         addedButton: '✓ Na minha lista',
@@ -211,6 +231,7 @@ function hideToast() {
 function mapTmdbItem(item, mediaType, provider = 'all') {
     const title = mediaType === 'tv' ? item.name : item.title;
     const date = mediaType === 'tv' ? item.first_air_date : item.release_date;
+    const genres = item.genre_ids || (item.genres ? item.genres.map(g => g.id) : []);
     return {
         id: item.id,
         title: title || t('noTitle'),
@@ -220,7 +241,8 @@ function mapTmdbItem(item, mediaType, provider = 'all') {
         rating: item.vote_average || 0,
         backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : '',
         provider: item.provider || provider,
-        mediaType
+        mediaType,
+        genre_ids: genres
     };
 }
 
@@ -242,7 +264,8 @@ async function fetchCatalog(page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
     const provKey = selectedProviders.slice().sort().join('-') || 'all';
-    const cacheKey = `${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const genreKey = selectedCatalogGenre || 'all';
+    const cacheKey = `${provKey}_${currentMediaType}_${genreKey}_${regionCode}_${language}_${page}`;
 
     if (apiCache.catalog.has(cacheKey)) {
         return apiCache.catalog.get(cacheKey);
@@ -262,6 +285,14 @@ async function fetchCatalog(page = 1) {
         params.set('with_watch_monetization_types', 'flatrate');
     }
 
+    if (selectedCatalogGenre) {
+        const genreObj = GENRES.find(g => g.key === selectedCatalogGenre);
+        if (genreObj) {
+            const genreIds = currentMediaType === 'tv' ? genreObj.tvIds : genreObj.movieIds;
+            params.set('with_genres', genreIds.join('|'));
+        }
+    }
+
     const response = await fetchWithTimeout(`${TMDB_BASE_URL}/discover/${currentMediaType}?${params}`);
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
@@ -279,7 +310,8 @@ async function searchCatalog(query, page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
     const provKey = selectedProviders.slice().sort().join('-') || 'all';
-    const cacheKey = `${cleanQuery.toLowerCase()}_${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const genreKey = selectedCatalogGenre || 'all';
+    const cacheKey = `${cleanQuery.toLowerCase()}_${provKey}_${currentMediaType}_${genreKey}_${regionCode}_${language}_${page}`;
 
     if (apiCache.search.has(cacheKey)) {
         return apiCache.search.get(cacheKey);
@@ -297,7 +329,16 @@ async function searchCatalog(query, page = 1) {
     const response = await fetch(`${TMDB_BASE_URL}/search/${currentMediaType}?${params}`, { signal });
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
-    const candidates = (data.results || []).slice(0, 20);
+    let candidates = (data.results || []).slice(0, 20);
+
+    // Filtra per genere se selezionato
+    if (selectedCatalogGenre) {
+        const genreObj = GENRES.find(g => g.key === selectedCatalogGenre);
+        if (genreObj) {
+            const genreIds = currentMediaType === 'tv' ? genreObj.tvIds : genreObj.movieIds;
+            candidates = candidates.filter(item => (item.genre_ids || []).some(id => genreIds.includes(id)));
+        }
+    }
 
     if (selectedProviders.length === 0) {
         const result = {
@@ -386,17 +427,46 @@ async function loadFromSheets() {
                 year: row.year,
                 poster: row.poster,
                 provider: row.provider || 'all',
-                mediaType: row.mediaType || 'movie'
+                mediaType: row.mediaType || 'movie',
+                genre_ids: Array.isArray(row.genre_ids) ? row.genre_ids : []
             };
             userLists[row.user].push(item);
             if (row.seen === true || row.seen === 'TRUE') seenMovies[row.user].push(item);
         });
         saveCachedSheetsData();
+        populateMissingGenres([...userLists.vincenzo, ...userLists.millena]);
     } catch (error) {
         console.error('Error loading from Sheets:', error);
         if (!userLists.vincenzo.length && !userLists.millena.length) {
             showError(t('errorLoad'));
         }
+    }
+}
+
+async function populateMissingGenres(items) {
+    const missing = items.filter(m => !m.genre_ids || !m.genre_ids.length);
+    if (!missing.length) return;
+    for (const item of missing.slice(0, 20)) {
+        try {
+            const cacheKey = `${item.mediaType || 'movie'}_${item.id}_it-IT`;
+            let details = apiCache.details.get(cacheKey);
+            if (!details) {
+                const res = await fetchWithTimeout(`${TMDB_BASE_URL}/${item.mediaType || 'movie'}/${item.id}?api_key=${TMDB_API_KEY}&language=it-IT`);
+                if (res.ok) {
+                    details = await res.json();
+                    apiCache.details.set(cacheKey, details);
+                }
+            }
+            if (details?.genres) {
+                item.genre_ids = details.genres.map(g => g.id);
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+    saveCachedSheetsData();
+    if (currentMainTab === 'list') {
+        renderCurrentListSubTab();
     }
 }
 
@@ -500,6 +570,7 @@ function updateUILanguage() {
     document.getElementById('searchBox').placeholder = t('searchPlaceholder');
     document.getElementById('labelMediaType').textContent = t('filterType');
     document.getElementById('labelPlatforms').textContent = t('filterPlatforms');
+    document.getElementById('labelCatalogGenres').textContent = t('filterGenres');
     document.getElementById('labelFilterView').textContent = t('filterViewLabel');
     document.getElementById('providerAllBtn').textContent = t('platformAll');
     document.getElementById('movieTypeMovies').textContent = t('moviesLabel');
@@ -512,7 +583,57 @@ function updateUILanguage() {
     document.getElementById('listTypeMyListBtn').textContent = t('subTabMyList');
     document.getElementById('listTypeSharedBtn').textContent = t('subTabShared');
     document.getElementById('listTypeSeenBtn').textContent = t('subTabSeen');
+    document.getElementById('labelListMediaType').textContent = t('filterType');
+    document.getElementById('labelListGenres').textContent = t('filterGenres');
+    document.getElementById('listTypeAllBtn').textContent = t('typeAll');
+    document.getElementById('listTypeMovieBtn').textContent = t('moviesLabel');
+    document.getElementById('listTypeTvBtn').textContent = t('seriesLabel');
 
+    renderGenreButtons();
+    renderCurrentListSubTab();
+}
+
+function renderGenreButtons() {
+    const lang = currentUser === 'millena' ? 'pt' : 'it';
+    const renderBtns = (containerId, selectedKey, onclickFnName) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = GENRES.map(g => `
+            <button class="filter-btn genre-btn ${selectedKey === g.key ? 'active' : ''}" 
+                    onclick="${onclickFnName}('${g.key}')">
+                ${g[lang]}
+            </button>
+        `).join('');
+    };
+
+    renderBtns('catalogGenreControls', selectedCatalogGenre, 'toggleCatalogGenre');
+    renderBtns('listGenreControls', selectedListGenre, 'toggleListGenre');
+}
+
+function toggleCatalogGenre(genreKey) {
+    if (selectedCatalogGenre === genreKey) {
+        selectedCatalogGenre = null; // deseleziona -> tutti i generi
+    } else {
+        selectedCatalogGenre = genreKey;
+    }
+    renderGenreButtons();
+    loadCatalog(1);
+}
+
+function toggleListGenre(genreKey) {
+    if (selectedListGenre === genreKey) {
+        selectedListGenre = null; // deseleziona -> tutti i generi
+    } else {
+        selectedListGenre = genreKey;
+    }
+    renderGenreButtons();
+    renderCurrentListSubTab();
+}
+
+function setListMediaType(type, button) {
+    currentListMediaType = type;
+    document.querySelectorAll('#listMediaTypeControls .filter-btn').forEach(btn => btn.classList.remove('active'));
+    button?.classList.add('active');
     renderCurrentListSubTab();
 }
 
@@ -530,6 +651,9 @@ function logout() {
     isSearching = false;
     currentSearchQuery = '';
     selectedProviders = [];
+    selectedCatalogGenre = null;
+    selectedListGenre = null;
+    currentListMediaType = 'all';
     currentMainTab = 'catalog';
     currentListSubTab = 'mylist';
     listSearchQuery = '';
@@ -633,7 +757,8 @@ async function loadCatalog(page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
     const provKey = selectedProviders.slice().sort().join('-') || 'all';
-    const cacheKey = `${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const genreKey = selectedCatalogGenre || 'all';
+    const cacheKey = `${provKey}_${currentMediaType}_${genreKey}_${regionCode}_${language}_${page}`;
 
     if (apiCache.catalog.has(cacheKey)) {
         const cached = apiCache.catalog.get(cacheKey);
@@ -670,7 +795,8 @@ async function loadSearchResults(query, page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
     const provKey = selectedProviders.slice().sort().join('-') || 'all';
-    const cacheKey = `${cleanQuery}_${provKey}_${currentMediaType}_${regionCode}_${language}_${page}`;
+    const genreKey = selectedCatalogGenre || 'all';
+    const cacheKey = `${cleanQuery}_${provKey}_${currentMediaType}_${genreKey}_${regionCode}_${language}_${page}`;
 
     if (apiCache.search.has(cacheKey)) {
         const cached = apiCache.search.get(cacheKey);
@@ -879,13 +1005,36 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = 'all') {
     }
 }
 
-function updateMyList() {
-    const target = document.getElementById('listContent');
-    if (!target) return;
-    let items = userLists[currentUser];
+function filterListItems(rawItems) {
+    let items = rawItems;
+
+    // 1. Filtro Tipo (Tutti, Film, Serie TV)
+    if (currentListMediaType !== 'all') {
+        items = items.filter(m => (m.mediaType || 'movie') === currentListMediaType);
+    }
+
+    // 2. Filtro Genere (singolo selezionato o tutti)
+    if (selectedListGenre) {
+        const genreObj = GENRES.find(g => g.key === selectedListGenre);
+        if (genreObj) {
+            const targetIds = [...genreObj.movieIds, ...genreObj.tvIds];
+            items = items.filter(m => Array.isArray(m.genre_ids) && m.genre_ids.some(gid => targetIds.includes(gid)));
+        }
+    }
+
+    // 3. Ricerca testuale interna
     if (listSearchQuery) {
         items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
     }
+
+    return items;
+}
+
+function updateMyList() {
+    const target = document.getElementById('listContent');
+    if (!target) return;
+    const items = filterListItems(userLists[currentUser]);
+    const isFiltered = listSearchQuery || currentListMediaType !== 'all' || selectedListGenre !== null;
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             showPartner: true,
@@ -893,7 +1042,7 @@ function updateMyList() {
             isRemove: true,
             action: `<button class="add-btn remove-btn" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">🗑️ ${t('removeButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptyMyList')}</div>`;
+        : `<div class="empty-state">${isFiltered ? t('noMoviesSearch') : t('emptyMyList')}</div>`;
 }
 
 function getSharedItems() {
@@ -908,32 +1057,29 @@ function getSharedItems() {
 function updateSharedList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    let items = getSharedItems();
-    if (listSearchQuery) {
-        items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
-    }
+    const items = filterListItems(getSharedItems());
+    const isFiltered = listSearchQuery || currentListMediaType !== 'all' || selectedListGenre !== null;
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             isSeenBtn: true,
             action: `<button class="seen-btn" onclick="toggleSeen(${item.id}, true, '${item.mediaType}', '${item.provider}')">✓ ${t('seenButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptyShared')}</div>`;
+        : `<div class="empty-state">${isFiltered ? t('noMoviesSearch') : t('emptyShared')}</div>`;
 }
 
 function updateSeenList() {
     const target = document.getElementById('listContent');
     if (!target) return;
-    let items = seenMovies.vincenzo.filter(item =>
+    const baseItems = seenMovies.vincenzo.filter(item =>
         seenMovies.millena.some(other => getMovieKey(other) === getMovieKey(item)));
-    if (listSearchQuery) {
-        items = items.filter(m => (m.title || '').toLowerCase().includes(listSearchQuery));
-    }
+    const items = filterListItems(baseItems);
+    const isFiltered = listSearchQuery || currentListMediaType !== 'all' || selectedListGenre !== null;
     target.innerHTML = items.length
         ? `<div class="movies-grid">${items.map(item => renderMovieCard(item, {
             isNotSeenBtn: true,
             action: `<button class="add-btn not-seen-btn" onclick="toggleSeen(${item.id}, false, '${item.mediaType}', '${item.provider}')">↺ ${t('notSeenButton')}</button>`
         })).join('')}</div>`
-        : `<div class="empty-state">${listSearchQuery ? t('noMoviesSearch') : t('emptySeen')}</div>`;
+        : `<div class="empty-state">${isFiltered ? t('noMoviesSearch') : t('emptySeen')}</div>`;
 }
 
 async function toggleSeen(id, seen, mediaType = 'movie', provider = 'all') {
