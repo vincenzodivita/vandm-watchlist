@@ -296,8 +296,60 @@ async function fetchCatalog(page = 1) {
     const response = await fetchWithTimeout(`${TMDB_BASE_URL}/discover/${currentMediaType}?${params}`);
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
+    const rawMovies = data.results || [];
+
+    if (selectedProviders.length === 1) {
+        const singleProvider = selectedProviders[0];
+        const result = {
+            movies: rawMovies.map(item => mapTmdbItem(item, currentMediaType, singleProvider)),
+            totalPages: Math.min(data.total_pages || 1, 500)
+        };
+        apiCache.catalog.set(cacheKey, result);
+        return result;
+    }
+
+    // Per selezione multipla (es. Disney + Netflix) o "Tutte", recuperiamo i provider effettivi per ogni titolo
+    await Promise.all(rawMovies.map(async item => {
+        try {
+            const providerKey = `${currentMediaType}_${item.id}`;
+            let providerData = apiCache.providers.get(providerKey);
+            if (!providerData) {
+                const res = await fetchWithTimeout(
+                    `${TMDB_BASE_URL}/${currentMediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`,
+                    {},
+                    4000
+                );
+                if (res.ok) {
+                    providerData = await res.json();
+                    apiCache.providers.set(providerKey, providerData);
+                }
+            }
+        } catch (e) {
+            // Silenzioso
+        }
+    }));
+
+    const movies = rawMovies.map(item => {
+        const providerKey = `${currentMediaType}_${item.id}`;
+        const providerData = apiCache.providers.get(providerKey);
+        let itemProvider = 'all';
+        if (providerData) {
+            const flatrate = providerData.results?.[regionCode]?.flatrate || [];
+            const matched = Object.keys(PROVIDERS).filter(pKey =>
+                flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)
+            );
+            const targetMatched = selectedProviders.length > 0
+                ? matched.filter(p => selectedProviders.includes(p))
+                : matched;
+            if (targetMatched.length > 0) {
+                itemProvider = targetMatched.join('|');
+            }
+        }
+        return mapTmdbItem(item, currentMediaType, itemProvider);
+    });
+
     const result = {
-        movies: (data.results || []).map(item => mapTmdbItem(item, currentMediaType, provKey)),
+        movies,
         totalPages: Math.min(data.total_pages || 1, 500)
     };
     apiCache.catalog.set(cacheKey, result);
@@ -341,8 +393,41 @@ async function searchCatalog(query, page = 1) {
     }
 
     if (selectedProviders.length === 0) {
+        await Promise.all(candidates.map(async item => {
+            try {
+                const providerKey = `${currentMediaType}_${item.id}`;
+                if (!apiCache.providers.has(providerKey)) {
+                    const res = await fetchWithTimeout(
+                        `${TMDB_BASE_URL}/${currentMediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`,
+                        { signal },
+                        4000
+                    );
+                    if (res.ok) {
+                        const providerData = await res.json();
+                        apiCache.providers.set(providerKey, providerData);
+                    }
+                }
+            } catch (e) {}
+        }));
+
+        const movies = candidates.map(item => {
+            const providerKey = `${currentMediaType}_${item.id}`;
+            const providerData = apiCache.providers.get(providerKey);
+            let itemProvider = 'all';
+            if (providerData) {
+                const flatrate = providerData.results?.[regionCode]?.flatrate || [];
+                const matched = Object.keys(PROVIDERS).filter(pKey =>
+                    flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)
+                );
+                if (matched.length > 0) {
+                    itemProvider = matched.join('|');
+                }
+            }
+            return mapTmdbItem(item, currentMediaType, itemProvider);
+        });
+
         const result = {
-            movies: candidates.map(item => mapTmdbItem(item, currentMediaType, 'all')),
+            movies,
             totalPages: Math.min(data.total_pages || 1, 500)
         };
         apiCache.search.set(cacheKey, result);
@@ -363,8 +448,12 @@ async function searchCatalog(query, page = 1) {
                 apiCache.providers.set(providerKey, providerData);
             }
             const regionalProviders = providerData.results?.[regionCode]?.flatrate || [];
-            return regionalProviders.some(p => targetProviderIds.includes(p.provider_id))
-                ? mapTmdbItem(item, currentMediaType, provKey) : null;
+            const matched = Object.keys(PROVIDERS).filter(pKey =>
+                regionalProviders.some(p => p.provider_id === PROVIDERS[pKey].id)
+            );
+            const targetMatched = matched.filter(p => targetProviderIds.includes(PROVIDERS[p].id));
+            if (targetMatched.length === 0) return null;
+            return mapTmdbItem(item, currentMediaType, targetMatched.join('|'));
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.warn('Provider check failed:', error);
@@ -444,7 +533,7 @@ async function loadFromSheets() {
 }
 
 async function populateMissingGenres(items) {
-    const missing = items.filter(m => !m.genre_ids || !m.genre_ids.length);
+    const missing = items.filter(m => !m.genre_ids || !m.genre_ids.length || !m.provider || m.provider === 'all' || m.provider.includes('-'));
     if (!missing.length) return;
     for (const item of missing.slice(0, 20)) {
         try {
@@ -459,6 +548,15 @@ async function populateMissingGenres(items) {
             }
             if (details?.genres) {
                 item.genre_ids = details.genres.map(g => g.id);
+            }
+
+            const provKey = `${item.mediaType || 'movie'}_${item.id}`;
+            if (!apiCache.providers.has(provKey)) {
+                const resProv = await fetchWithTimeout(`${TMDB_BASE_URL}/${item.mediaType || 'movie'}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`);
+                if (resProv.ok) {
+                    const pData = await resProv.json();
+                    apiCache.providers.set(provKey, pData);
+                }
             }
         } catch (e) {
             // ignore
@@ -855,33 +953,31 @@ function renderMovieCard(item, options = {}) {
 
     // Trova tutti i provider associati a questo titolo
     const providersSet = new Set();
-    if (item.provider && item.provider !== 'all') {
-        item.provider.split(/[-|]/).forEach(p => {
-            if (PROVIDERS[p]) providersSet.add(p);
+    const addProviderKey = (p) => {
+        if (!p || p === 'all') return;
+        p.split('|').forEach(key => {
+            const cleanKey = key.trim();
+            if (PROVIDERS[cleanKey]) providersSet.add(cleanKey);
         });
-    }
-    const partnerItem = userLists[otherUser]?.find(m => getMovieKey(m) === key);
-    if (partnerItem?.provider && partnerItem.provider !== 'all') {
-        partnerItem.provider.split(/[-|]/).forEach(p => {
-            if (PROVIDERS[p]) providersSet.add(p);
-        });
-    }
-    const myItem = userLists[currentUser]?.find(m => getMovieKey(m) === key);
-    if (myItem?.provider && myItem.provider !== 'all') {
-        myItem.provider.split(/[-|]/).forEach(p => {
-            if (PROVIDERS[p]) providersSet.add(p);
-        });
-    }
-    if (selectedProviders.length === 1 && PROVIDERS[selectedProviders[0]]) {
-        providersSet.add(selectedProviders[0]);
-    }
+    };
+
+    addProviderKey(item.provider);
+    if (partnerItem?.provider) addProviderKey(partnerItem.provider);
+    if (myItem?.provider) addProviderKey(myItem.provider);
+
     const cachedProviderData = apiCache.providers.get(`${item.mediaType}_${item.id}`);
     if (cachedProviderData) {
         const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
         const flatrate = cachedProviderData.results?.[regionCode]?.flatrate || [];
         Object.keys(PROVIDERS).forEach(pKey => {
             if (flatrate.some(p => p.provider_id === PROVIDERS[pKey].id)) {
-                providersSet.add(pKey);
+                if (currentMainTab === 'catalog' && selectedProviders.length > 0) {
+                    if (selectedProviders.includes(pKey)) {
+                        providersSet.add(pKey);
+                    }
+                } else {
+                    providersSet.add(pKey);
+                }
             }
         });
     }
@@ -1147,8 +1243,15 @@ async function openMovieModal(id, mediaType = currentMediaType, provider = 'all'
         document.getElementById('modalTitle').textContent = item.title;
 
         let provName = '';
-        if (item.provider && PROVIDERS[item.provider]) {
-            provName = ` · ${PROVIDERS[item.provider].name}`;
+        const modalProviders = [];
+        if (item.provider && item.provider !== 'all') {
+            item.provider.split('|').forEach(p => {
+                const clean = p.trim();
+                if (PROVIDERS[clean]) modalProviders.push(PROVIDERS[clean].name);
+            });
+        }
+        if (modalProviders.length > 0) {
+            provName = ` · ${modalProviders.join(', ')}`;
         }
         document.getElementById('modalYear').textContent = `${item.year}${provName} · ${mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel')}`;
         document.getElementById('modalRating').textContent = item.rating ? `⭐ ${Number(item.rating).toFixed(1)}` : '';
