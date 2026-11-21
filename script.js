@@ -20,6 +20,10 @@ let currentModalMovie = null;
 let syncWatchLink = '';
 let searchTimeout = null;
 let searchAbortController = null;
+let toastTimeout = null;
+
+// Sets to track in-flight actions
+const pendingSyncKeys = new Set();
 
 // Performance Caches
 const apiCache = {
@@ -75,10 +79,13 @@ const translations = {
         save: '💾 Salva',
         cancel: 'Annulla',
         syncSaved: 'Link salvato con successo!',
-        syncError: 'Errore nel salvataggio del link',
+        syncError: 'Errore nella sincronizzazione',
         noSyncLink: 'Nessun link di sincronizzazione configurato. Clicca sul pulsante ✏️ per aggiungerne uno.',
         noOverview: 'Nessuna descrizione disponibile.',
-        noTitle: 'Titolo non disponibile'
+        noTitle: 'Titolo non disponibile',
+        saving: 'Salvataggio...',
+        syncingSheets: 'Sincronizzazione in corso...',
+        syncedSheets: 'Sincronizzato con successo!'
     },
     millena: {
         welcome: 'Olá Millena! 🇧🇷',
@@ -125,10 +132,13 @@ const translations = {
         save: '💾 Salvar',
         cancel: 'Cancelar',
         syncSaved: 'Link salvo com sucesso!',
-        syncError: 'Erro ao salvar o link',
+        syncError: 'Erro ao sincronizar',
         noSyncLink: 'Nenhum link de sincronização configurado. Clique no botão ✏️ para adicionar um.',
         noOverview: 'Nenhuma descrição disponível.',
-        noTitle: 'Título não disponível'
+        noTitle: 'Título não disponível',
+        saving: 'Salvando...',
+        syncingSheets: 'Sincronizando com o Sheets...',
+        syncedSheets: 'Sincronizado com sucesso!'
     }
 };
 
@@ -146,6 +156,35 @@ function getCatalogPagination() {
 
 function getMovieKey(item) {
     return `${item.id}|${item.mediaType || 'movie'}`;
+}
+
+// Toast Feedback System
+function showToast(message, type = 'syncing', icon = '🔄', duration = 0) {
+    const toast = document.getElementById('syncToast');
+    const toastMsg = document.getElementById('syncToastMessage');
+    const toastIcon = document.getElementById('syncToastIcon');
+    if (!toast || !toastMsg) return;
+
+    clearTimeout(toastTimeout);
+    toastMsg.textContent = message;
+    if (toastIcon) {
+        toastIcon.textContent = icon;
+        toastIcon.classList.toggle('spin-icon', type === 'syncing');
+    }
+
+    toast.className = `sync-toast active ${type}`;
+
+    if (duration > 0) {
+        toastTimeout = setTimeout(() => {
+            toast.classList.remove('active');
+        }, duration);
+    }
+}
+
+function hideToast() {
+    clearTimeout(toastTimeout);
+    const toast = document.getElementById('syncToast');
+    if (toast) toast.classList.remove('active');
 }
 
 function mapTmdbItem(item, mediaType, provider = currentProvider) {
@@ -317,7 +356,6 @@ async function loadFromSheets() {
         saveCachedSheetsData();
     } catch (error) {
         console.error('Error loading from Sheets:', error);
-        // Se c'è errore di rete ma avevamo la cache locale, non blocchiamo l'utente
         if (!userLists.vincenzo.length && !userLists.millena.length) {
             showError(t('errorLoad'));
         }
@@ -462,6 +500,7 @@ function logout() {
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('appScreen').style.display = 'none';
     document.body.classList.remove('vincenzo-color');
+    hideToast();
 }
 
 function switchCatalog(provider, button) {
@@ -587,8 +626,19 @@ function renderMovieCard(item, options = {}) {
     const inMyList = userLists[currentUser].some(m => getMovieKey(m) === key);
     const inPartnerList = userLists[otherUser].some(m => getMovieKey(m) === key);
     const isSeen = seenMovies[currentUser].some(m => getMovieKey(m) === key);
+    const isPending = pendingSyncKeys.has(key);
     const mediaLabel = item.mediaType === 'tv' ? t('seriesLabel') : t('moviesLabel');
     const providerLabel = item.provider === 'netflix' ? 'Netflix' : 'Disney+';
+
+    let actionBtn;
+    if (isPending) {
+        actionBtn = `<button class="add-btn syncing" disabled><span class="button-spinner"></span> ${t('saving')}</button>`;
+    } else if (options.action) {
+        actionBtn = options.action;
+    } else {
+        actionBtn = `<button class="add-btn ${inMyList ? 'added' : ''}" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">${inMyList ? t('addedButton') : t('addButton')}</button>`;
+    }
+
     return `<div class="movie-card">
         ${options.showPartner && inPartnerList ? `<div class="partner-badge">${t('partnerBadge')}</div>` : ''}
         ${options.showSeen && isSeen ? `<div class="seen-badge">${t('seenBadge')}</div>` : ''}
@@ -596,7 +646,7 @@ function renderMovieCard(item, options = {}) {
         <div class="movie-title" onclick="openMovieModal(${item.id}, '${item.mediaType}', '${item.provider}')">${escapeHtml(item.title)}</div>
         <div class="movie-year">${item.year || 'N/A'} · ${providerLabel} · ${mediaLabel}</div>
         ${item.rating ? `<div class="movie-rating">⭐ ${Number(item.rating).toFixed(1)}</div>` : ''}
-        ${options.action || `<button class="add-btn ${inMyList ? 'added' : ''}" onclick="toggleMovie(${item.id}, '${item.mediaType}', '${item.provider}')">${inMyList ? t('addedButton') : t('addButton')}</button>`}
+        ${actionBtn}
     </div>`;
 }
 
@@ -625,19 +675,48 @@ async function toggleMovie(id, mediaType = currentMediaType, provider = currentP
         || userLists[currentUser === 'vincenzo' ? 'millena' : 'vincenzo'].find(m => getMovieKey(m) === key)
         || currentModalMovie;
     if (!item) return;
+
+    pendingSyncKeys.add(key);
     const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
-    if (index === -1) {
+    const isAdding = index === -1;
+    let removedItem = null;
+
+    if (isAdding) {
         userLists[currentUser].push(item);
-        await addToSheets(currentUser, item);
     } else {
-        const [removed] = userLists[currentUser].splice(index, 1);
+        [removedItem] = userLists[currentUser].splice(index, 1);
         seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
-        await removeFromSheets(currentUser, removed);
     }
+
+    // Feedback immediato sulla UI con bottone in stato "Salvataggio..."
     displayCatalog(allMovies);
     updateMyList();
     updateSharedList();
     updateSeenList();
+    updateModalAddButton();
+    showToast(t('syncingSheets'), 'syncing', '🔄', 0);
+
+    try {
+        const ok = isAdding
+            ? await addToSheets(currentUser, item)
+            : await removeFromSheets(currentUser, removedItem);
+
+        if (ok) {
+            showToast(t('syncedSheets'), 'success', '✓', 2200);
+        } else {
+            showToast(t('syncError'), 'error', '⚠️', 3500);
+        }
+    } catch (e) {
+        console.error('Sync error:', e);
+        showToast(t('syncError'), 'error', '⚠️', 3500);
+    } finally {
+        pendingSyncKeys.delete(key);
+        displayCatalog(allMovies);
+        updateMyList();
+        updateSharedList();
+        updateSeenList();
+        updateModalAddButton();
+    }
 }
 
 function updateMyList() {
@@ -687,15 +766,36 @@ async function toggleSeen(id, seen, mediaType = 'movie', provider = 'disney') {
     const item = userLists.vincenzo.find(m => getMovieKey(m) === key)
         || userLists.millena.find(m => getMovieKey(m) === key);
     if (!item) return;
+
+    pendingSyncKeys.add(key);
     for (const user of ['vincenzo', 'millena']) {
         seenMovies[user] = seen
             ? [...seenMovies[user].filter(m => getMovieKey(m) !== key), item]
             : seenMovies[user].filter(m => getMovieKey(m) !== key);
     }
-    await markAsSeenInSheets(item, seen);
+
+    // Feedback immediato con spinner sul bottone e toast
     updateSharedList();
     updateSeenList();
     updateMyList();
+    showToast(t('syncingSheets'), 'syncing', '🔄', 0);
+
+    try {
+        const ok = await markAsSeenInSheets(item, seen);
+        if (ok) {
+            showToast(t('syncedSheets'), 'success', '✓', 2200);
+        } else {
+            showToast(t('syncError'), 'error', '⚠️', 3500);
+        }
+    } catch (e) {
+        console.error('Mark seen error:', e);
+        showToast(t('syncError'), 'error', '⚠️', 3500);
+    } finally {
+        pendingSyncKeys.delete(key);
+        updateSharedList();
+        updateSeenList();
+        updateMyList();
+    }
 }
 
 function switchTab(tab, button) {
@@ -756,8 +856,19 @@ async function openMovieModal(id, mediaType = currentMediaType, provider = curre
 
 function updateModalAddButton() {
     if (!currentModalMovie) return;
-    const inList = userLists[currentUser].some(m => getMovieKey(m) === getMovieKey(currentModalMovie));
+    const key = getMovieKey(currentModalMovie);
     const button = document.getElementById('modalAddButton');
+    if (!button) return;
+
+    if (pendingSyncKeys.has(key)) {
+        button.disabled = true;
+        button.className = 'modal-button syncing';
+        button.innerHTML = `<span class="button-spinner"></span> ${t('saving')}`;
+        return;
+    }
+
+    button.disabled = false;
+    const inList = userLists[currentUser].some(m => getMovieKey(m) === key);
     button.textContent = inList ? t('removeButton') : t('addButton');
     button.className = `modal-button ${inList ? 'secondary' : 'primary'}`;
 }
@@ -771,22 +882,7 @@ function closeModal(event) {
 
 async function toggleMovieFromModal() {
     if (!currentModalMovie) return;
-    const item = currentModalMovie;
-    const key = getMovieKey(item);
-    const index = userLists[currentUser].findIndex(m => getMovieKey(m) === key);
-    if (index === -1) {
-        userLists[currentUser].push(item);
-        await addToSheets(currentUser, item);
-    } else {
-        const [removed] = userLists[currentUser].splice(index, 1);
-        seenMovies[currentUser] = seenMovies[currentUser].filter(m => getMovieKey(m) !== key);
-        await removeFromSheets(currentUser, removed);
-    }
-    displayCatalog(allMovies);
-    updateMyList();
-    updateSharedList();
-    updateSeenList();
-    updateModalAddButton();
+    await toggleMovie(currentModalMovie.id, currentModalMovie.mediaType, currentModalMovie.provider);
 }
 
 // Sync link
@@ -822,7 +918,11 @@ function openEditSyncModal() {
     document.getElementById('syncModalDescription').textContent = t('syncModalDescription');
     document.getElementById('syncLinkInput').placeholder = t('syncPlaceholder');
     document.getElementById('syncLinkInput').value = syncWatchLink;
-    document.querySelector('#editSyncModal .modal-button.primary').textContent = t('save');
+    const saveBtn = document.querySelector('#editSyncModal .modal-button.primary');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = t('save');
+    }
     document.querySelector('#editSyncModal .modal-button.secondary').textContent = t('cancel');
     document.getElementById('editSyncModal').classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -839,6 +939,12 @@ async function saveSyncLink() {
     if (newLink && !/^https?:\/\//i.test(newLink)) {
         newLink = 'https://' + newLink;
     }
+    const saveBtn = document.querySelector('#editSyncModal .modal-button.primary');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="button-spinner"></span> ${t('saving')}`;
+    }
+    showToast(t('syncingSheets'), 'syncing', '🔄', 0);
     try {
         await fetch(SHEETS_API_URL, {
             method: 'POST', mode: 'no-cors',
@@ -849,10 +955,15 @@ async function saveSyncLink() {
         updateSyncButton();
         saveCachedSheetsData();
         closeEditSyncModal();
-        showSuccessMessage(t('syncSaved'));
+        showToast(t('syncSaved'), 'success', '✓', 2500);
     } catch (error) {
         console.error('Error saving sync link:', error);
-        showError(t('syncError'));
+        showToast(t('syncError'), 'error', '⚠️', 3500);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = t('save');
+        }
     }
 }
 

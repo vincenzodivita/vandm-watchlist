@@ -686,3 +686,95 @@
         flex: 1;
     }
 }
+
+/* Floating Sync Toast Feedback */
+.sync-toast {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: rgba(17, 24, 39, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9em;
+    font-weight: 600;
+    z-index: 9999;
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease, background 0.3s ease;
+}
+
+.sync-toast.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.sync-toast.syncing {
+    border-color: rgba(59, 130, 246, 0.6);
+    background: rgba(15, 23, 42, 0.95);
+}
+
+.sync-toast.success {
+    border-color: #10b981;
+    background: rgba(6, 78, 59, 0.95);
+}
+
+.sync-toast.error {
+    border-color: #ef4444;
+    background: rgba(127, 29, 29, 0.95);
+}
+
+.sync-toast-icon {
+    font-size: 1.1em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sync-toast .spin-icon {
+    animation: toastSpin 1s linear infinite;
+}
+
+@keyframes toastSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Button Spinner */
+.button-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: toastSpin 0.75s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+.add-btn.syncing,
+.seen-btn.syncing,
+.modal-button.syncing {
+    opacity: 0.75;
+    cursor: wait !important;
+    pointer-events: none;
+}
+
+@media (max-width: 640px) {
+    .sync-toast {
+        left: 20px;
+        right: 20px;
+        bottom: 20px;
+        justify-content: center;
+        text-align: center;
+    }
+}
