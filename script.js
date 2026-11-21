@@ -19,6 +19,15 @@ let currentSearchQuery = '';
 let currentModalMovie = null;
 let syncWatchLink = '';
 let searchTimeout = null;
+let searchAbortController = null;
+
+// Performance Caches
+const apiCache = {
+    catalog: new Map(),   // key: provider_mediaType_region_lang_page
+    search: new Map(),    // key: query_provider_mediaType_region_lang_page
+    providers: new Map(), // key: mediaType_id
+    details: new Map()    // key: mediaType_id_lang
+};
 
 const translations = {
     vincenzo: {
@@ -98,7 +107,7 @@ const translations = {
         sharedTitle: 'Títulos que vocês querem assistir juntos 💕',
         seenTitle: 'Títulos que vocês já assistiram juntos ✓',
         emptyMyList: 'Sua lista está vazia. Adicione filmes ou séries do catálogo!',
-        emptyShared: 'Nenhum título em comum ainda. Adicionem seus favoritos! 💑',
+        emptyShared: 'Nenhum título em comum ancora. Adicionem seus favoritos! 💑',
         emptySeen: 'Vocês ainda não assistiram nenhum título juntos. Assistam algo e marquem como visto! 🎬',
         errorLoad: 'Erro ao carregar dados do Google Sheets',
         errorSave: 'Erro ao salvar no Google Sheets',
@@ -155,9 +164,29 @@ function mapTmdbItem(item, mediaType, provider = currentProvider) {
     };
 }
 
+async function fetchWithTimeout(url, options = {}) {
+    const { timeout = 12000, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+        clearTimeout(timer);
+        return response;
+    } catch (err) {
+        clearTimeout(timer);
+        throw err;
+    }
+}
+
 async function fetchCatalog(provider, mediaType, page = 1) {
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const cacheKey = `${provider}_${mediaType}_${regionCode}_${language}_${page}`;
+
+    if (apiCache.catalog.has(cacheKey)) {
+        return apiCache.catalog.get(cacheKey);
+    }
+
     const params = new URLSearchParams({
         api_key: TMDB_API_KEY,
         language,
@@ -167,50 +196,107 @@ async function fetchCatalog(provider, mediaType, page = 1) {
         watch_region: regionCode,
         with_watch_monetization_types: 'flatrate'
     });
-    const response = await fetch(`${TMDB_BASE_URL}/discover/${mediaType}?${params}`);
+    const response = await fetchWithTimeout(`${TMDB_BASE_URL}/discover/${mediaType}?${params}`);
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
-    return {
+    const result = {
         movies: (data.results || []).map(item => mapTmdbItem(item, mediaType, provider)),
         totalPages: Math.min(data.total_pages || 1, 500)
     };
+    apiCache.catalog.set(cacheKey, result);
+    return result;
 }
 
 async function searchCatalog(query, provider, mediaType, page = 1) {
-    if (!query.trim()) return { movies: [], totalPages: 0 };
+    const cleanQuery = query.trim();
+    if (!cleanQuery) return { movies: [], totalPages: 0 };
     const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
     const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const cacheKey = `${cleanQuery.toLowerCase()}_${provider}_${mediaType}_${regionCode}_${language}_${page}`;
+
+    if (apiCache.search.has(cacheKey)) {
+        return apiCache.search.get(cacheKey);
+    }
+
+    if (searchAbortController) {
+        searchAbortController.abort();
+    }
+    searchAbortController = new AbortController();
+    const signal = searchAbortController.signal;
+
     const params = new URLSearchParams({
-        api_key: TMDB_API_KEY, query, language, page: String(page), include_adult: 'false'
+        api_key: TMDB_API_KEY, query: cleanQuery, language, page: String(page), include_adult: 'false'
     });
-    const response = await fetch(`${TMDB_BASE_URL}/search/${mediaType}?${params}`);
+    const response = await fetch(`${TMDB_BASE_URL}/search/${mediaType}?${params}`, { signal });
     if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
     const data = await response.json();
     const candidates = (data.results || []).slice(0, 20);
+
     const filtered = await Promise.all(candidates.map(async item => {
         try {
-            const providerResponse = await fetch(
-                `${TMDB_BASE_URL}/${mediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`
-            );
-            const providerData = await providerResponse.json();
+            const providerKey = `${mediaType}_${item.id}`;
+            let providerData = apiCache.providers.get(providerKey);
+            if (!providerData) {
+                const providerResponse = await fetch(
+                    `${TMDB_BASE_URL}/${mediaType}/${item.id}/watch/providers?api_key=${TMDB_API_KEY}`,
+                    { signal }
+                );
+                providerData = await providerResponse.json();
+                apiCache.providers.set(providerKey, providerData);
+            }
             const regionalProviders = providerData.results?.[regionCode]?.flatrate || [];
             return regionalProviders.some(p => p.provider_id === PROVIDER_IDS[provider])
                 ? mapTmdbItem(item, mediaType, provider) : null;
         } catch (error) {
-            console.warn('Provider check failed:', error);
+            if (error.name !== 'AbortError') {
+                console.warn('Provider check failed:', error);
+            }
             return null;
         }
     }));
-    return {
+
+    const result = {
         movies: filtered.filter(Boolean),
         totalPages: filtered.some(Boolean) ? Math.min(data.total_pages || 1, 500) : 0
     };
+    apiCache.search.set(cacheKey, result);
+    return result;
+}
+
+// Local cache for Google Sheets data (Stale-While-Revalidate)
+function loadCachedSheetsData() {
+    try {
+        const cached = localStorage.getItem('vandm_cached_data');
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.userLists) userLists = parsed.userLists;
+            if (parsed.seenMovies) seenMovies = parsed.seenMovies;
+            if (parsed.syncWatchLink) {
+                syncWatchLink = parsed.syncWatchLink;
+                updateSyncButton();
+            }
+        }
+    } catch (e) {
+        console.warn('Cache read error:', e);
+    }
+}
+
+function saveCachedSheetsData() {
+    try {
+        localStorage.setItem('vandm_cached_data', JSON.stringify({
+            userLists,
+            seenMovies,
+            syncWatchLink
+        }));
+    } catch (e) {
+        console.warn('Cache save error:', e);
+    }
 }
 
 // Google Sheets
 async function loadFromSheets() {
     try {
-        const response = await fetch(`${SHEETS_API_URL}?action=getAll`);
+        const response = await fetchWithTimeout(`${SHEETS_API_URL}?action=getAll`, { timeout: 15000 });
         const data = await response.json();
         if (!data.success) throw new Error(data.error || 'Google Sheets error');
         userLists = { vincenzo: [], millena: [] };
@@ -228,9 +314,13 @@ async function loadFromSheets() {
             userLists[row.user].push(item);
             if (row.seen === true || row.seen === 'TRUE') seenMovies[row.user].push(item);
         });
+        saveCachedSheetsData();
     } catch (error) {
         console.error('Error loading from Sheets:', error);
-        showError(t('errorLoad'));
+        // Se c'è errore di rete ma avevamo la cache locale, non blocchiamo l'utente
+        if (!userLists.vincenzo.length && !userLists.millena.length) {
+            showError(t('errorLoad'));
+        }
     }
 }
 
@@ -251,6 +341,7 @@ async function postToSheets(payload, errorMessage) {
 }
 
 function addToSheets(user, item) {
+    saveCachedSheetsData();
     return postToSheets({
         action: 'add', user, movieId: item.id, title: item.title,
         year: item.year, poster: item.poster,
@@ -259,6 +350,7 @@ function addToSheets(user, item) {
 }
 
 function removeFromSheets(user, item) {
+    saveCachedSheetsData();
     return postToSheets({
         action: 'remove', user, movieId: item.id,
         provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
@@ -266,6 +358,7 @@ function removeFromSheets(user, item) {
 }
 
 function markAsSeenInSheets(item, seen) {
+    saveCachedSheetsData();
     return postToSheets({
         action: 'markSeen', movieId: item.id, seen,
         provider: item.provider || 'disney', mediaType: item.mediaType || 'movie'
@@ -292,6 +385,20 @@ function showSuccessMessage(message) {
     setTimeout(() => div.remove(), 3000);
 }
 
+// Background Sync with Sheets
+async function syncWithSheets() {
+    try {
+        await Promise.allSettled([loadFromSheets(), loadSyncLink()]);
+        saveCachedSheetsData();
+        displayCatalog(allMovies);
+        updateMyList();
+        updateSharedList();
+        updateSeenList();
+    } catch (e) {
+        console.warn('Background sync error:', e);
+    }
+}
+
 // Login
 async function login(user) {
     currentUser = user;
@@ -306,9 +413,15 @@ async function login(user) {
     document.getElementById('welcomeText').textContent = t('welcome');
     document.body.classList.toggle('vincenzo-color', user === 'vincenzo');
     updateUILanguage();
-    await loadFromSheets();
-    await loadSyncLink();
+
+    // 1. Mostra istantaneamente i dati dalla cache locale (0ms di attesa)
+    loadCachedSheetsData();
+
+    // 2. Avvia subito il rendering del catalogo TMDB
     switchCatalog('disney', document.getElementById('disneyCatalogBtn'));
+
+    // 3. Sincronizza i dati freschi da Google Sheets in background senza bloccare la UI
+    syncWithSheets();
 }
 
 function updateSearchPlaceholder() {
@@ -378,8 +491,23 @@ async function loadCatalog(page = 1) {
     const searchBox = document.getElementById('searchBox');
     if (searchBox) searchBox.value = '';
     const grid = getCatalogGrid();
-    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     const pagination = getCatalogPagination();
+
+    const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+    const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const cacheKey = `${currentProvider}_${currentMediaType}_${regionCode}_${language}_${page}`;
+
+    // Se è già in cache, rendering istantaneo a 0ms!
+    if (apiCache.catalog.has(cacheKey)) {
+        const cached = apiCache.catalog.get(cacheKey);
+        allMovies = cached.movies;
+        totalPages = cached.totalPages;
+        displayCatalog(allMovies);
+        updatePagination();
+        return;
+    }
+
+    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     if (pagination) pagination.innerHTML = '';
     try {
         const result = await fetchCatalog(currentProvider, currentMediaType, page);
@@ -399,8 +527,24 @@ async function loadSearchResults(query, page = 1) {
     currentSearchQuery = query;
     currentPage = page;
     const grid = getCatalogGrid();
-    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     const pagination = getCatalogPagination();
+
+    const cleanQuery = query.trim().toLowerCase();
+    const regionCode = currentRegion === 'italy' ? 'IT' : 'BR';
+    const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
+    const cacheKey = `${cleanQuery}_${currentProvider}_${currentMediaType}_${regionCode}_${language}_${page}`;
+
+    // Se è già in cache, rendering istantaneo
+    if (apiCache.search.has(cacheKey)) {
+        const cached = apiCache.search.get(cacheKey);
+        allMovies = cached.movies;
+        totalPages = cached.totalPages;
+        displayCatalog(allMovies);
+        updatePagination();
+        return;
+    }
+
+    if (grid) grid.innerHTML = `<div class="loading">${t('loading')}</div>`;
     if (pagination) pagination.innerHTML = '';
     try {
         const result = await searchCatalog(query, currentProvider, currentMediaType, page);
@@ -409,6 +553,7 @@ async function loadSearchResults(query, page = 1) {
         displayCatalog(allMovies);
         updatePagination();
     } catch (error) {
+        if (error.name === 'AbortError') return;
         console.error('Search error:', error);
         if (grid) grid.innerHTML = `<div class="empty-state">${t('noMovies')}</div>`;
         if (pagination) pagination.innerHTML = '';
@@ -573,19 +718,27 @@ function handleSearch() {
     const query = document.getElementById('searchBox').value.trim();
     clearTimeout(searchTimeout);
     if (!query) {
+        if (searchAbortController) searchAbortController.abort();
         loadCatalog(1);
         return;
     }
-    searchTimeout = setTimeout(() => loadSearchResults(query, 1), 450);
+    searchTimeout = setTimeout(() => loadSearchResults(query, 1), 350);
 }
 
-// Movie details modal
+// Movie details modal with cache
 async function openMovieModal(id, mediaType = currentMediaType, provider = currentProvider) {
     try {
         const language = currentRegion === 'italy' ? 'it-IT' : 'pt-BR';
-        const response = await fetch(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${TMDB_API_KEY}&language=${language}`);
-        if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
-        const details = await response.json();
+        const cacheKey = `${mediaType}_${id}_${language}`;
+        let details = apiCache.details.get(cacheKey);
+
+        if (!details) {
+            const response = await fetchWithTimeout(`${TMDB_BASE_URL}/${mediaType}/${id}?api_key=${TMDB_API_KEY}&language=${language}`);
+            if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+            details = await response.json();
+            apiCache.details.set(cacheKey, details);
+        }
+
         const item = mapTmdbItem(details, mediaType, provider);
         currentModalMovie = item;
         document.getElementById('modalBackdrop').src = item.backdrop || item.poster;
@@ -639,11 +792,12 @@ async function toggleMovieFromModal() {
 // Sync link
 async function loadSyncLink() {
     try {
-        const response = await fetch(`${SHEETS_API_URL}?action=getSyncLink`);
+        const response = await fetchWithTimeout(`${SHEETS_API_URL}?action=getSyncLink`, { timeout: 15000 });
         const data = await response.json();
         if (data.success) {
             syncWatchLink = data.link || '';
             updateSyncButton();
+            saveCachedSheetsData();
         }
     } catch (error) { console.error('Error loading sync link:', error); }
 }
@@ -693,6 +847,7 @@ async function saveSyncLink() {
         });
         syncWatchLink = newLink;
         updateSyncButton();
+        saveCachedSheetsData();
         closeEditSyncModal();
         showSuccessMessage(t('syncSaved'));
     } catch (error) {
