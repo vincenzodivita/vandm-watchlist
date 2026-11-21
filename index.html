@@ -92,6 +92,7 @@
                             <button id="listTypeMyListBtn" class="filter-btn active" onclick="switchListSubTab('mylist', this)">La Mia Lista</button>
                             <button id="listTypeSharedBtn" class="filter-btn" onclick="switchListSubTab('shared', this)">Da Vedere Insieme ❤️</button>
                             <button id="listTypeSeenBtn" class="filter-btn" onclick="switchListSubTab('seen', this)">Già Visti ✓</button>
+                            <button id="listTypeCalendarBtn" class="filter-btn" onclick="switchListSubTab('calendar', this)">📅 Calendario</button>
                         </div>
                     </div>
 
@@ -161,6 +162,28 @@
                     💾 Salva
                 </button>
                 <button class="modal-button secondary" onclick="closeEditSyncModal()">
+                    Annulla
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for setting/changing seen date -->
+<div id="datePickerModal" class="modal" onclick="closeDatePickerModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 420px;">
+        <div class="sync-modal-body">
+            <button class="modal-close" onclick="closeDatePickerModal()">&times;</button>
+            <h2 class="modal-title" id="datePickerModalTitle">📅 Data di Visione</h2>
+            <p id="datePickerModalDesc" style="margin-bottom: 15px; opacity: 0.85;">
+                Quando hai visto questo film?
+            </p>
+            <input type="date" id="seenDateInput" class="sync-input" style="font-size: 1.1em; padding: 10px; text-align: center; color-scheme: dark;">
+            <div class="sync-modal-buttons" style="margin-top: 15px;">
+                <button class="modal-button primary" onclick="confirmSaveSeenDate()">
+                    💾 Salva Data
+                </button>
+                <button class="modal-button secondary" onclick="closeDatePickerModal()">
                     Annulla
                 </button>
             </div>
